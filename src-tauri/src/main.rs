@@ -1,6 +1,74 @@
-// Prevents additional console window on Windows in release, DO NOT REMOVE!!
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+use std::net::UdpSocket;
+use std::thread;
+use std::time::Duration;
+use tauri::Manager;
+
+
+
 
 fn main() {
-    airgap_lib::run()
+
+    tauri::Builder::default()
+    .setup(|_app| {
+
+        thread::spawn(move || {
+            start_discovery_broadcast();
+        });
+
+        thread::spawn(move || {
+            start_listener();
+        });
+
+        Ok(())
+    })
+    .run(tauri::generate_context!())
+    .expect("Error while running Tauri application");
+    
+}
+
+fn start_discovery_broadcast() {
+    
+    let socket = UdpSocket::bind("0.0.0.0:8080").expect("Failed to bind socket");
+
+    socket.set_broadcast(true).expect("Failed to set broadcast");
+
+    let broadcast_addr = "255.255.255.255:4242";
+
+    let message = b"AirGap";
+
+    println!("Broadcast is started...{} on ", broadcast_addr);
+
+    loop {
+        socket.send_to(message,broadcast_addr).expect("Failed to send broadcast");
+        println!("ping sent...");
+        thread::sleep(Duration::from_secs(5));
+    }
+}
+
+fn start_listener(){
+    let socket = UdpSocket::bind("0.0.0.0:4242").expect("Failed to bind in port 4242");
+
+    println!("Listener is started in port 4242");
+
+    let mut buf = [0;1024];
+
+     loop {
+        // recv_from est BLOQUANT. Le programme attend ici jusqu'à ce qu'un message arrive.
+        // Il renvoie : (nombre d'octets reçus, adresse de l'expéditeur)
+        match socket.recv_from(&mut buf) {
+            Ok((amt, src)) => {
+                // On convertit les bytes reçus en texte lisible
+                let received = String::from_utf8_lossy(&buf[..amt]);
+                
+                // On filtre pour ne pas s'écouter soi-même
+                if received.contains("AirGap:Ping") {
+                    println!("👋 Pair détecté ! Adresse : {}", src);
+                }
+            },
+            Err(e) => {
+                println!("Erreur de réception : {}", e);
+            }
+        }
+    }
 }
