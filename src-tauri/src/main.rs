@@ -2,22 +2,23 @@
 use std::net::UdpSocket;
 use std::thread;
 use std::time::Duration;
-use tauri::Manager;
-
+use tauri::Emitter;
 
 
 
 fn main() {
 
     tauri::Builder::default()
-    .setup(|_app| {
+    .setup(|app| {
 
+        let app_handle = app.handle();
         thread::spawn(move || {
             start_discovery_broadcast();
         });
 
+        let handle_clone = app_handle.clone();
         thread::spawn(move || {
-            start_listener();
+            start_listener(handle_clone);
         });
 
         Ok(())
@@ -37,19 +38,17 @@ fn start_discovery_broadcast() {
 
     let message = b"AirGap";
 
-    println!("Broadcast is started...{} on ", broadcast_addr);
+    
 
     loop {
         socket.send_to(message,broadcast_addr).expect("Failed to send broadcast");
-        println!("ping sent...");
+        
         thread::sleep(Duration::from_secs(5));
     }
 }
 
-fn start_listener(){
+fn start_listener(app_handle:tauri::AppHandle){
     let socket = UdpSocket::bind("0.0.0.0:4242").expect("Failed to bind in port 4242");
-
-    println!("Listener is started in port 4242");
 
     let mut buf = [0;1024];
 
@@ -63,7 +62,8 @@ fn start_listener(){
                 
                 // On filtre pour ne pas s'écouter soi-même
                 if received.contains("AirGap:Ping") {
-                    println!("👋 Pair détecté ! Adresse : {}", src);
+                    println!("received");
+                    app_handle.emit("pair-found",src.to_string()).unwrap();
                 }
             },
             Err(e) => {
