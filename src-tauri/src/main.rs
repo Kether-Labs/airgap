@@ -53,17 +53,15 @@ fn start_listener(app_handle:tauri::AppHandle){
     let mut buf = [0;1024];
 
      loop {
-        // recv_from est BLOQUANT. Le programme attend ici jusqu'à ce qu'un message arrive.
-        // Il renvoie : (nombre d'octets reçus, adresse de l'expéditeur)
+
         match socket.recv_from(&mut buf) {
             Ok((amt, src)) => {
-                // On convertit les bytes reçus en texte lisible
-                let received = String::from_utf8_lossy(&buf[..amt]);
                 
-                // On filtre pour ne pas s'écouter soi-même
+                let received = String::from_utf8_lossy(&buf[..amt]);
+
                 if received.contains("AirGap:Ping") {
                     println!("received");
-                    app_handle.emit("pair-found",src.to_string()).unwrap();
+                    app_handle.emit("peer-found",src.to_string()).unwrap();
                 }
             },
             Err(e) => {
