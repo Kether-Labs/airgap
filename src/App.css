@@ -1,1 +1,38 @@
 @import "tailwindcss";
+
+@theme {
+    --color-wa-bg: #0b141a;
+    --color-wa-header: #202c33;
+    --color-wa-sidebar: #111b21;
+    --color-wa-input: #2a3942;
+    --color-wa-bubble-me: #005c4b;
+    --color-wa-bubble-other: #202c33;
+}
+
+:root {
+    --wa-bg-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400' viewBox='0 0 400 400'%3E%3Cpath fill='%23ffffff' fill-opacity='0.03' d='M200 200l20-20-20-20-20 20zm80-80l20-20-20-20-20 20zm-160 0l20-20-20-20-20 20zm80 160l20-20-20-20-20 20z'/%3E%3C/svg%3E");
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+    width: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(134, 150, 160, 0.2);
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(134, 150, 160, 0.4);
+}
+
+.chat-bg-pattern {
+    background-color: var(--color-wa-bg);
+    background-image: var(--wa-bg-image);
+    background-repeat: repeat;
+}
