@@ -1,41 +1,82 @@
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { invoke } from "@tauri-apps/api/core"; // Pour appeler les commandes Rust
+import { invoke } from "@tauri-apps/api/core";
+import EmojiPicker, { Theme } from 'emoji-picker-react';
 import "./App.css";
 
 // Interface pour typer les messages reçus de Rust
 interface ChatMessage {
   sender_ip: string;
+  sender_name: string;
   content: string;
 }
-
+interface Peer {
+  ip: string;
+  name: string;
+}
 function App() {
-  const [peers, setPeers] = useState<string[]>([]);
+  const [peers, setPeers] = useState<Peer[]>([]);
   const [selectedPeer, setSelectedPeer] = useState<string | null>(null);
 
+  const [username, setUsername] = useState<string | null>(null); // null = en cours de chargement
+  const [inputName, setInputName] = useState("");
   // On change la structure : un objet qui stocke les messages par IP
   // ex: { "127.0.0.1": [{text: "Salut", sender: "Moi"}] }
   const [conversations, setConversations] = useState<Record<string, { sender: string; text: string; time: string }[]>>({});
-
+  const [showPicker, setShowPicker] = useState(false);
   const [inputValue, setInputValue] = useState("");
 
+  interface Peer {
+    ip: string;
+    name: string;
+  }
+
+  const handleEmojiClick = (emojiData: any) => {
+    setInputValue((prev) => prev + emojiData.emoji);
+    // Optionnel : fermer le picker après sélection
+    // setShowPicker(false); 
+  };
   // 1. Listener pour les Pairs (UDP)
   useEffect(() => {
     const setupListener = async () => {
       const unlisten = await listen<string>("peer-found", (event) => {
-        const peerIp = event.payload;
-        setPeers((currentPeers) => {
-          if (!currentPeers.includes(peerIp)) {
-            return [...currentPeers, peerIp];
-          }
-          return currentPeers;
-        });
+        try {
+          // Rust envoie une string JSON, on la transforme en objet JS
+          const data = JSON.parse(event.payload);
+          const peerIp = data.ip;
+          const peerName = data.name;
+
+          setPeers((currentPeers) => {
+            // On vérifie si le pair existe déjà
+            if (!currentPeers.find(p => p.ip === peerIp)) {
+              return [...currentPeers, { ip: peerIp, name: peerName }];
+            }
+            // Mise à jour du nom si besoin
+            return currentPeers.map(p => p.ip === peerIp ? { ...p, name: peerName } : p);
+          });
+        } catch (e) {
+          console.error("Erreur parsing peer", e);
+        }
       });
       return unlisten;
     };
     const unlistenPromise = setupListener();
     return () => { unlistenPromise.then((fn) => fn && fn()); };
   }, []);
+
+  useEffect(() => {
+    invoke<string>("get_username").then((name) => {
+      setUsername(name); // Si vide, l'utilisateur devra s'inscrire
+    });
+  }, []);
+
+  const handleSetUsername = async () => {
+    if (inputName.trim() === "") return;
+    await invoke("set_username", { name: inputName });
+    setUsername(inputName);
+  };
+
+
 
   // 2. Listener pour les Messages (TCP)
   useEffect(() => {
@@ -88,7 +129,7 @@ function App() {
     // Appel au Backend Rust pour envoyer
     try {
       await invoke("send_message", {
-        peerIp: selectedPeer.split(":")[0], // On envoie juste l'IP, le port est fixe (4243)
+        peerIp: selectedPeer, // On envoie juste l'IP, le port est fixe (4243)
         content: inputValue
       });
       setInputValue("");
@@ -101,6 +142,36 @@ function App() {
   // On récupère les messages du pair actuel
   const currentMessages = selectedPeer ? conversations[selectedPeer] || [] : [];
 
+  // RENDU CONDITIONNEL
+  if (username === null) {
+    return <div className="flex h-screen items-center justify-center bg-slate-950 text-white">Chargement...</div>;
+  }
+
+  if (username === "") {
+    // ECRAN DE CONFIGURATION
+    return (
+      <div className="flex h-screen items-center justify-center bg-slate-950 text-white">
+        <div className="bg-slate-900 p-8 rounded-xl shadow-2xl text-center border border-slate-800">
+          <h1 className="text-2xl font-bold mb-2">Bienvenue sur AirGap</h1>
+          <p className="text-slate-400 mb-6 text-sm">Choisissez votre pseudonyme local</p>
+          <input
+            type="text"
+            className="w-full p-3 rounded bg-slate-800 border border-slate-700 text-white mb-4 focus:outline-none focus:border-indigo-500"
+            placeholder="Votre pseudo..."
+            value={inputName}
+            onChange={(e) => setInputName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSetUsername()}
+          />
+          <button
+            onClick={handleSetUsername}
+            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white p-3 rounded font-bold transition"
+          >
+            Commencer
+          </button>
+        </div>
+      </div>
+    );
+  }
   return (
     // ... Garde le même JSX que tout à l'heure ...
     // C'est juste la logique 'messages' qui change pour utiliser 'currentMessages'
@@ -116,19 +187,20 @@ function App() {
           </div>
           {peers.map((peer) => (
             <button
-              key={peer}
-              onClick={() => setSelectedPeer(peer)}
-              className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 group ${selectedPeer === peer
-                ? "bg-indigo-600/10 border border-indigo-500/20 text-indigo-100"
-                : "hover:bg-slate-800/50 border border-transparent text-slate-400 hover:text-slate-200"
-                }`}
+              key={peer.ip} // Clé unique = IP
+              onClick={() => setSelectedPeer(peer.ip)} // On stocke l'IP pour la connexion
+            // ... classes CSS ...
             >
-              {/* ... UI du bouton peer ... */}
+              <div className="relative">
+                {/* ... Avatar ... */}
+              </div>
               <div className="flex flex-col items-start min-w-0">
                 <span className="font-medium truncate w-full text-sm">
-                  {peer.split(":")[0]}
+                  {peer.name} {/* Affiche le NOM ici */}
                 </span>
-                <span className="text-[10px] opacity-50 uppercase tracking-tighter">Connected</span>
+                <span className="text-[10px] opacity-50 uppercase tracking-tighter">
+                  {peer.ip} {/* Affiche l'IP en petit dessous */}
+                </span>
               </div>
             </button>
           ))}
@@ -184,8 +256,29 @@ function App() {
             </div>
 
             {/* Input */}
-            <footer className="p-6 bg-slate-950/20 backdrop-blur-xl border-t border-slate-800/50">
+            <footer className="p-6 bg-slate-950/20 backdrop-blur-xl border-t border-slate-800/50 relative"> {/* Ajout de 'relative' */}
               <div className="max-w-4xl mx-auto flex gap-4 p-1.5 bg-slate-900/60 rounded-2xl border border-slate-800/80 shadow-2xl focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500/40 transition-all duration-300">
+
+                {/* BOUTON EMOJI */}
+                <button
+                  onClick={() => setShowPicker((val) => !val)}
+                  className="p-2.5 text-slate-500 hover:text-slate-300 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M8 14s1.5 2 4 2 4-2 4-2" /><line x1="9" y1="9" x2="9.01" y2="9" /><line x1="15" y1="9" x2="15.01" y2="9" /></svg>
+                </button>
+
+                {/* LE PICKER (La fenêtre qui s'affiche) */}
+                {showPicker && (
+                  <div className="absolute bottom-20 left-6 z-50"> {/* Positionnement au-dessus de l'input */}
+                    <EmojiPicker
+                      theme={Theme.DARK}
+                      onEmojiClick={handleEmojiClick}
+                      searchDisabled={true} // Désactive la recherche pour alléger
+                      skinTonesDisabled={true} // Désactive les tons de peau pour simplifier
+                    />
+                  </div>
+                )}
+
                 <input
                   type="text"
                   placeholder="Écrire un message chiffré..."
