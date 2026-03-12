@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./App.css";
 
 // Import UI Components
@@ -53,6 +54,17 @@ function App() {
   const [typingPeers, setTypingPeers] = useState<Record<string, ReturnType<typeof setTimeout>>>({});
   const [conversations, setConversations] = useState<Record<string, MessageType[]>>({});
 
+
+  useEffect(() => {
+    const appWindow = getCurrentWindow();
+
+    // Informe Rust quand la fenêtre perd/reprend le focus
+    const unlistenFocus = appWindow.onFocusChanged(({ payload: focused }) => {
+      invoke("set_window_focused", { focused }).catch(() => { });
+    });
+
+    return () => { unlistenFocus.then((fn) => fn()); };
+  }, []);
   // 1. Initialisation (get username)
   useEffect(() => {
     invoke<string>("get_username")

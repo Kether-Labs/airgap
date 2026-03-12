@@ -34,7 +34,8 @@ struct AppState {
     known_peers: Mutex<Vec<PeerInfo>>,
     my_username: Mutex<String>,
     db: Mutex<Connection>,
-    db_key: [u8; 32]
+    db_key: [u8; 32],
+    window_focused: Mutex<bool>
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -70,6 +71,7 @@ fn main() {
         my_username: Mutex::new(saved_username),
         db: Mutex::new(conn),
         db_key,
+        window_focused: Mutex::new(true)
     });
 
     tauri::Builder::default()
@@ -129,8 +131,9 @@ fn main() {
         start_typing_listener(handle_typing);
     });
     Ok(())
+    
 }) //
-        .invoke_handler(tauri::generate_handler![send_message, get_username, set_username, send_typing])
+        .invoke_handler(tauri::generate_handler![send_message, get_username, set_username, send_typing, set_window_focused])
         .run(tauri::generate_context!())
         .expect("Error while running Tauri application");
 }
@@ -268,6 +271,7 @@ fn handle_tcp_connection(stream: TcpStream, app_handle: tauri::AppHandle, state:
     let mut reader = BufReader::new(&stream);
     let mut line = String::new();
 
+    
     if reader.read_line(&mut line).is_ok() {
         let line = line.trim();
         let parts: Vec<&str> = line.splitn(4, ':').collect();
@@ -278,46 +282,60 @@ fn handle_tcp_connection(stream: TcpStream, app_handle: tauri::AppHandle, state:
                 let cipher_b64 = parts[2];
                 let nonce_b64  = parts[3];
 
-                let peers = state.known_peers.lock().unwrap();
-                if let Some(peer) = peers.iter().find(|p| p.ip == sender_addr) {
-                    let shared_secret = state.my_secret.diffie_hellman(&peer.public_key);
+                let peer_data = {
+        let peers = state.known_peers.lock().unwrap();
+        peers.iter().find(|p| p.ip == sender_addr).map(|peer| {
+            (peer.public_key.clone(), peer.username.clone())
+        })
+        // peers est drop ici automatiquement — fin du bloc {}
+    };
+                if let Some((peer_pubkey, peer_username)) = peer_data {
+                    let shared_secret = state.my_secret.diffie_hellman(&peer_pubkey);
                     let cipher = Aes256Gcm::new_from_slice(shared_secret.as_bytes()).unwrap();
 
-                    let ciphertext = general_purpose::STANDARD.decode(cipher_b64).unwrap_or_default();
+                    let ciphertext  = general_purpose::STANDARD.decode(cipher_b64).unwrap_or_default();
                     let nonce_bytes = general_purpose::STANDARD.decode(nonce_b64).unwrap_or_default();
 
                     if nonce_bytes.len() == 12 {
                         let nonce = Nonce::from_slice(&nonce_bytes);
-                        if let Ok(decrypted) = cipher.decrypt(nonce, ciphertext.as_slice()) {
+            if let Ok(decrypted) = cipher.decrypt(nonce, ciphertext.as_slice()) {
                             let content = String::from_utf8_lossy(&decrypted).to_string();
 
                             // Sauvegarde DB
-                            let db = state.db.lock().unwrap();
-                            save_message(&db, &sender_addr, &peer.username, &content, &state.db_key).ok();
-                            drop(db);
-
+                            {
+                    let db = state.db.lock().unwrap();
+                    save_message(&db, &sender_addr, &peer_username, &content, &state.db_key).ok();
+                }
+                            
                             // Notifie le frontend
-                            let msg = ChatMessage {
-                                sender_ip: sender_addr.clone(),
-                                sender_name: peer.username.clone(),
-                                 content: content.clone(),
-                                msg_id: msg_id.to_string(), // ← nouveau champ
-                            };
-                            app_handle.emit("message-received", msg).unwrap();
+                             let msg = ChatMessage {
+                    sender_ip:   sender_addr.clone(),
+                    sender_name: peer_username.clone(),
+                    content:     content.clone(),
+                    msg_id:      msg_id.to_string(),
+                };
 
-                            app_handle
-                            .notification()
-                            .builder()
-                            .title(&peer.username)
-                            .body(&content)
-                            .show()
-                            .ok();
+                app_handle.emit("message-received", msg).unwrap();
+                            
+                            let is_focused = *state.window_focused.lock().unwrap();
+                if !is_focused {
+                    app_handle
+                        .notification()
+                        .builder()
+                        .title(&peer_username)
+                        .body(&content)
+                        .show()
+                        .ok();
+                }
+                            
                             // Renvoie ACK
-                            drop(peers);
-                            if let Ok(mut ack_stream) = TcpStream::connect(format!("{}:4243", sender_addr)) {
-                                let ack = format!("ACK:{}\n", msg_id);
-                                ack_stream.write_all(ack.as_bytes()).ok();
-                            }
+                            
+                            if let Ok(mut ack_stream) = TcpStream::connect(
+                    format!("{}:4243", sender_addr)
+                ) {
+                    let ack = format!("ACK:{}\n", msg_id);
+                    ack_stream.write_all(ack.as_bytes()).ok();
+                }
                         }
                     }
                 }
@@ -418,4 +436,9 @@ fn send_typing(peer_ip: String, state: tauri::State<Arc<AppState>>) {
     let msg = format!("AirGap:Typing:{}", username);
     let addr = format!("{}:4244", peer_ip);
     socket.send_to(msg.as_bytes(), addr).ok();
+}
+
+#[tauri::command]
+fn set_window_focused(focused: bool, state: tauri::State<Arc<AppState>>) {
+    *state.window_focused.lock().unwrap() = focused;
 }
