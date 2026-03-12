@@ -3,6 +3,9 @@ use std::thread;
 use std::time::Duration;
 use std::io::{Write, BufReader, BufRead};
 use std::sync::{Arc, Mutex};
+mod db;
+use db::{init_db, save_message, load_history, DbMessage};
+use rusqlite::Connection;
 
 use std::fs;
 use std::path::PathBuf;
@@ -13,13 +16,14 @@ use x25519_dalek::{StaticSecret, PublicKey};
 use aes_gcm::{aead::{Aead, KeyInit}, Aes256Gcm, Nonce};
 use base64::{Engine as _, engine::general_purpose};
 use rand::rngs::OsRng;
-
+use std::time::Instant;
 // Structure des données d'un pair
 #[derive(Clone, Debug)]
 struct PeerInfo {
     ip: String,
     public_key: PublicKey,
     username: String, // Nouveau : on stocke le pseudo
+    last_seen: Instant
 }
 
 // État global
@@ -27,7 +31,9 @@ struct AppState {
     my_secret: StaticSecret,
     my_public_key: PublicKey,
     known_peers: Mutex<Vec<PeerInfo>>,
-    my_username: Mutex<String>, // Nouveau : ton pseudo actuel
+    my_username: Mutex<String>,
+    db: Mutex<Connection>,
+    db_key: [u8; 32]
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -35,6 +41,7 @@ struct ChatMessage {
     sender_ip: String,
     sender_name: String, // Nouveau
     content: String,
+    msg_id: String,
 }
 
 // Fonction pour obtenir le chemin du fichier de config
@@ -53,41 +60,76 @@ fn main() {
     // Chargement du pseudo sauvegardé
     let saved_username = load_username();
 
+    let conn = init_db().expect("Impossible d'initialiser la DB");
+    let db_key = derive_db_key();
     let state = Arc::new(AppState {
         my_secret: secret,
         my_public_key: public,
         known_peers: Mutex::new(Vec::new()),
         my_username: Mutex::new(saved_username),
+        db: Mutex::new(conn),
+        db_key,
     });
 
     tauri::Builder::default()
         .manage(state.clone())
+        .invoke_handler(tauri::generate_handler![send_message, get_username, set_username, get_history])
         .setup(move |app| {
-            let app_handle = app.handle();
+    let app_handle = app.handle();
 
-            // On lance juste les threads réseaux, pas de création de fenêtre ici.
-            // React gèrera l'affichage du formulaire ou du chat.
+    // Thread 1 — broadcast UDP
+    let state_udp = state.clone();
+    thread::spawn(move || {
+        start_discovery_broadcast(state_udp);
+    }); // ← ferme ici avant le thread suivant
 
-            let state_udp = state.clone();
-            thread::spawn(move || {
-                start_discovery_broadcast(state_udp);
-            });
+    // Thread 2 — listener UDP
+    let state_listen = state.clone();
+    let handle_udp = app_handle.clone();
+    thread::spawn(move || {
+        start_listener(handle_udp, state_listen);
+    }); // ← ferme ici
 
-            let state_listen = state.clone();
-            let handle_udp = app_handle.clone();
-            thread::spawn(move || {
-                start_listener(handle_udp, state_listen);
-            });
+    // Thread 3 — serveur TCP
+    let state_tcp = state.clone();
+    let handle_tcp = app_handle.clone();
+    thread::spawn(move || {
+        start_tcp_server(handle_tcp, state_tcp);
+    }); // ← ferme ici
 
-            let state_tcp = state.clone();
-            let handle_tcp = app_handle.clone();
-            thread::spawn(move || {
-                start_tcp_server(handle_tcp, state_tcp);
-            });
+    // Thread 4 — watchdog (DOIT être au même niveau que les autres)
+    let state_watch = state.clone();         // ← clone AVANT le spawn
+    let handle_watch = app_handle.clone();   // ← clone AVANT le spawn
+    thread::spawn(move || {                  // ← spawn séparé
+        loop {
+            thread::sleep(Duration::from_secs(10));
 
-            Ok(())
-        })
-        .invoke_handler(tauri::generate_handler![send_message, get_username, set_username])
+            let lost: Vec<String> = {
+                let mut peers = state_watch.known_peers.lock().unwrap();
+                let lost: Vec<String> = peers
+                    .iter()
+                    .filter(|p| p.last_seen.elapsed().as_secs() > 15)
+                    .map(|p| p.ip.clone())
+                    .collect();
+                peers.retain(|p| p.last_seen.elapsed().as_secs() <= 15);
+                lost
+                // lock libéré ici automatiquement
+            };
+
+            for ip in lost {
+                println!("Pair perdu: {}", ip);
+                handle_watch.emit("peer-left", ip).unwrap();
+            }
+        }
+    }); // ← ferme ici
+
+    let handle_typing = app_handle.clone();
+    thread::spawn(move || {
+        start_typing_listener(handle_typing);
+    });
+    Ok(())
+}) //
+        .invoke_handler(tauri::generate_handler![send_message, get_username, set_username, send_typing])
         .run(tauri::generate_context!())
         .expect("Error while running Tauri application");
 }
@@ -172,13 +214,16 @@ fn start_listener(app_handle: tauri::AppHandle, state: Arc<AppState>) {
                                     if let Some(peer) = peers.iter_mut().find(|p| p.ip == peer_ip) {
                                         peer.public_key = their_public;
                                         peer.username = peer_username.clone();
+                                        peer.last_seen = Instant::now();
                                     } else {
                                         peers.push(PeerInfo { 
                                             ip: peer_ip.clone(), 
                                             public_key: their_public,
-                                            username: peer_username.clone()
+                                            username: peer_username.clone(),
+                                            last_seen: Instant::now()
                                         });
                                     }
+                                    
                                 }
                                 
                                 // On envoie un objet JSON au frontend maintenant
@@ -218,44 +263,88 @@ fn start_tcp_server(app_handle: tauri::AppHandle, state: Arc<AppState>) {
 }
 
 fn handle_tcp_connection(stream: TcpStream, app_handle: tauri::AppHandle, state: Arc<AppState>) {
+    let sender_addr = stream.peer_addr().unwrap().ip().to_string();
     let mut reader = BufReader::new(&stream);
     let mut line = String::new();
 
     if reader.read_line(&mut line).is_ok() {
-        let sender_addr = stream.peer_addr().unwrap().ip().to_string();
-        let peers = state.known_peers.lock().unwrap();
-        let peer_info = peers.iter().find(|p| p.ip == sender_addr);
-        
-        if let Some(peer) = peer_info {
-            let shared_secret = state.my_secret.diffie_hellman(&peer.public_key);
-            let parts: Vec<&str> = line.trim().split(':').collect();
-            if parts.len() == 2 {
-                let ciphertext = general_purpose::STANDARD.decode(parts[0]).unwrap_or_default();
-                let nonce_bytes = general_purpose::STANDARD.decode(parts[1]).unwrap_or_default();
-                
-                if nonce_bytes.len() == 12 {
-                    let nonce = Nonce::from_slice(&nonce_bytes);
+        let line = line.trim();
+        let parts: Vec<&str> = line.splitn(4, ':').collect();
+
+        match parts[0] {
+            "MSG" if parts.len() == 4 => {
+                let msg_id   = parts[1];
+                let cipher_b64 = parts[2];
+                let nonce_b64  = parts[3];
+
+                let peers = state.known_peers.lock().unwrap();
+                if let Some(peer) = peers.iter().find(|p| p.ip == sender_addr) {
+                    let shared_secret = state.my_secret.diffie_hellman(&peer.public_key);
                     let cipher = Aes256Gcm::new_from_slice(shared_secret.as_bytes()).unwrap();
-                    
-                    match cipher.decrypt(nonce, ciphertext.as_slice()) {
-                        Ok(decrypted) => {
+
+                    let ciphertext = general_purpose::STANDARD.decode(cipher_b64).unwrap_or_default();
+                    let nonce_bytes = general_purpose::STANDARD.decode(nonce_b64).unwrap_or_default();
+
+                    if nonce_bytes.len() == 12 {
+                        let nonce = Nonce::from_slice(&nonce_bytes);
+                        if let Ok(decrypted) = cipher.decrypt(nonce, ciphertext.as_slice()) {
+                            let content = String::from_utf8_lossy(&decrypted).to_string();
+
+                            // Sauvegarde DB
+                            let db = state.db.lock().unwrap();
+                            save_message(&db, &sender_addr, &peer.username, &content, &state.db_key).ok();
+                            drop(db);
+
+                            // Notifie le frontend
                             let msg = ChatMessage {
-                                sender_ip: sender_addr,
-                                sender_name: peer.username.clone(), // On utilise le pseudo connu
-                                content: String::from_utf8_lossy(&decrypted).to_string(),
+                                sender_ip: sender_addr.clone(),
+                                sender_name: peer.username.clone(),
+                                content,
+                                msg_id: msg_id.to_string(), // ← nouveau champ
                             };
                             app_handle.emit("message-received", msg).unwrap();
-                        },
-                        Err(_) => println!("Erreur de déchiffrement"),
+
+                            // Renvoie ACK
+                            drop(peers);
+                            if let Ok(mut ack_stream) = TcpStream::connect(format!("{}:4243", sender_addr)) {
+                                let ack = format!("ACK:{}\n", msg_id);
+                                ack_stream.write_all(ack.as_bytes()).ok();
+                            }
+                        }
                     }
                 }
-            }
+            },
+
+            "ACK" if parts.len() == 2 => {
+                let msg_id = parts[1].to_string();
+                // Notifie le frontend que le message est délivré
+                app_handle.emit("message-ack", msg_id).unwrap();
+            },
+
+            _ => println!("Format inconnu: {}", line),
         }
     }
 }
 
+fn derive_db_key() -> [u8; 32] {
+    // Lit /etc/hostname directement — pas besoin de crate
+  let hostname = std::env::var("COMPUTERNAME")         // Windows
+    .or_else(|_| std::env::var("HOSTNAME"))           // Linux
+    .unwrap_or_else(|_| "airgap-default".to_string());
+    let hostname = hostname.trim();
+
+    let salt = b"airgap-db-key-v1";
+    let input = format!("{}{}", hostname, String::from_utf8_lossy(salt));
+
+    use sha2::{Sha256, Digest};
+    let hash = Sha256::digest(input.as_bytes());
+
+    let mut key = [0u8; 32];
+    key.copy_from_slice(&hash);
+    key
+}
 #[tauri::command]
-fn send_message(peer_ip: String, content: String, state: tauri::State<Arc<AppState>>) -> Result<(), String> {
+fn send_message(peer_ip: String, content: String, msg_id: String, state: tauri::State<Arc<AppState>>) -> Result<(), String> {
     let peers = state.known_peers.lock().unwrap();
     let peer_info = peers.iter().find(|p| p.ip == peer_ip);
     
@@ -269,11 +358,60 @@ fn send_message(peer_ip: String, content: String, state: tauri::State<Arc<AppSta
             general_purpose::STANDARD.encode(&ciphertext), 
             general_purpose::STANDARD.encode(&nonce_bytes)
         );
+
+        let line = format!(
+            "MSG:{}:{}:{}\n",
+            msg_id,
+            general_purpose::STANDARD.encode(&ciphertext),
+            general_purpose::STANDARD.encode(&nonce_bytes)
+        );
         let addr = format!("{}:4243", peer_ip);
         let mut stream = TcpStream::connect(&addr).map_err(|e| e.to_string())?;
-        stream.write_all(format!("{}\n", encrypted_msg).as_bytes()).map_err(|e| e.to_string())?;
+        stream.write_all(line.as_bytes()).map_err(|e| e.to_string())?;
+
+        let username = state.my_username.lock().unwrap().clone();
+        let db = state.db.lock().unwrap();
+        save_message(&db, &peer_ip, &username, &content,&state.db_key).ok();
+
         Ok(())
     } else {
         Err("Destinataire inconnu".to_string())
     }
+}
+
+fn start_typing_listener(app_handle: tauri::AppHandle) {
+    let socket = UdpSocket::bind("0.0.0.0:4244").expect("Failed to bind typing UDP");
+    let mut buf = [0; 512];
+
+    loop {
+        if let Ok((amt, src)) = socket.recv_from(&mut buf) {
+            let received = String::from_utf8_lossy(&buf[..amt]);
+            // Format : "AirGap:Typing:username"
+            if received.starts_with("AirGap:Typing:") {
+                let parts: Vec<&str> = received.splitn(3, ':').collect();
+                if parts.len() == 3 {
+                    let payload = serde_json::json!({
+                        "ip": src.ip().to_string(),
+                        "name": parts[2].trim()
+                    });
+                    app_handle.emit("peer-typing", payload.to_string()).unwrap();
+                }
+            }
+        }
+    }
+}
+
+#[tauri::command]
+fn get_history(peer_ip: String, state: tauri::State<Arc<AppState>>) -> Vec<DbMessage> {
+    let db = state.db.lock().unwrap();
+    load_history(&db, &peer_ip,&state.db_key).unwrap_or_default()
+}
+
+#[tauri::command]
+fn send_typing(peer_ip: String, state: tauri::State<Arc<AppState>>) {
+    let socket = UdpSocket::bind("0.0.0.0:0").unwrap();
+    let username = state.my_username.lock().unwrap().clone();
+    let msg = format!("AirGap:Typing:{}", username);
+    let addr = format!("{}:4244", peer_ip);
+    socket.send_to(msg.as_bytes(), addr).ok();
 }

@@ -31,5 +31,6 @@ aes-gcm = "0.10"
 base64 = "0.21"
 rand = "0.8"
 dirs = "5.0"
-
+rusqlite = { version = "0.31", features = ["bundled"] }
+sha2 = "0.10"
 
