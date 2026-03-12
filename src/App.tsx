@@ -50,7 +50,7 @@ function App() {
   const [username, setUsername] = useState<string | null>(null);
   const [isSystemReady, setIsSystemReady] = useState<boolean>(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState<boolean>(false);
-
+  const [typingPeers, setTypingPeers] = useState<Record<string, ReturnType<typeof setTimeout>>>({});
   const [conversations, setConversations] = useState<Record<string, MessageType[]>>({});
 
   // 1. Initialisation (get username)
@@ -66,7 +66,34 @@ function App() {
       });
   }, []);
 
+  useEffect(() => {
+    const setup = async () => {
+      const unlisten = await listen<string>("peer-typing", (event) => {
+        const data = JSON.parse(event.payload);
+        const ip: string = data.ip;
 
+        setTypingPeers((prev) => {
+          // Annule le timeout précédent si il existe
+          if (prev[ip]) clearTimeout(prev[ip]);
+
+          // Nouveau timeout : efface le typing après 3s sans nouveau signal
+          const timeout = setTimeout(() => {
+            setTypingPeers((current) => {
+              const next = { ...current };
+              delete next[ip];
+              return next;
+            });
+          }, 3000);
+
+          return { ...prev, [ip]: timeout };
+        });
+      });
+      return unlisten;
+    };
+
+    const promise = setup();
+    return () => { promise.then((fn) => fn && fn()); };
+  }, []);
   useEffect(() => {
     const setup = async () => {
       const unlisten = await listen<string>("peer-left", (event) => {
@@ -288,6 +315,9 @@ function App() {
     ? selectedPeerObj.name
     : selectedPeer || "Utilisateur";
 
+  const isSelectedPeerTyping = selectedPeer
+    ? selectedPeer in typingPeers  // true si un timeout actif existe pour ce pair
+    : false;
   return (
     <div className="flex h-screen bg-[#111b21] text-[#e9edef] font-sans overflow-hidden">
       <Sidebar
@@ -310,9 +340,13 @@ function App() {
             selectedPeerIp={selectedPeer}
             selectedPeerName={peerName}
             messages={currentMessages}
+            isTyping={isSelectedPeerTyping}
             onDeleteMessage={(id) => handleDeleteMessage(selectedPeer, id)}
           />
-          <MessageInput onSendMessage={handleSendMessage} />
+          <MessageInput
+            onSendMessage={handleSendMessage}
+            selectedPeer={selectedPeer}
+          />
         </div>
       ) : (
         // Empty state WhatsApp Web style

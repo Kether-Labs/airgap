@@ -33,4 +33,5 @@ rand = "0.8"
 dirs = "5.0"
 rusqlite = { version = "0.31", features = ["bundled"] }
 sha2 = "0.10"
+tauri-plugin-notification = "2"
 

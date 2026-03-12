@@ -9,6 +9,11 @@
     "beforeBuildCommand": "pnpm build",
     "frontendDist": "../dist"
   },
+  "plugins": {
+    "notification": {
+      "all": true
+    }
+  },
   "app": {
     "windows": [
       {

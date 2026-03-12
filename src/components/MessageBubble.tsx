@@ -1,4 +1,5 @@
 import React from "react";
+import { MessageStatus } from "./ChatWindow";
 
 export interface MessageType {
     id: string;
@@ -60,7 +61,10 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete, onImag
                         />
                     </div>
                 ) : (
-                    <span className="break-words block mb-1 pr-10">{message.text}</span>
+                    <>
+                        <span className="break-words block mb-1 pr-10">{message.text}</span>
+
+                    </>
                 )}
 
                 <div className={`flex items-center justify-end gap-1.5 mt-0.5 ${isImage ? 'absolute bottom-2 right-3 px-2 py-0.5 bg-black/40 backdrop-blur-sm rounded-full text-white' : 'absolute bottom-1 right-2'}`}>

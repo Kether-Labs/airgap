@@ -3,6 +3,7 @@ use std::thread;
 use std::time::Duration;
 use std::io::{Write, BufReader, BufRead};
 use std::sync::{Arc, Mutex};
+use tauri_plugin_notification::NotificationExt;
 mod db;
 use db::{init_db, save_message, load_history, DbMessage};
 use rusqlite::Connection;
@@ -299,11 +300,18 @@ fn handle_tcp_connection(stream: TcpStream, app_handle: tauri::AppHandle, state:
                             let msg = ChatMessage {
                                 sender_ip: sender_addr.clone(),
                                 sender_name: peer.username.clone(),
-                                content,
+                                 content: content.clone(),
                                 msg_id: msg_id.to_string(), // ← nouveau champ
                             };
                             app_handle.emit("message-received", msg).unwrap();
 
+                            app_handle
+                            .notification()
+                            .builder()
+                            .title(&peer.username)
+                            .body(&content)
+                            .show()
+                            .ok();
                             // Renvoie ACK
                             drop(peers);
                             if let Ok(mut ack_stream) = TcpStream::connect(format!("{}:4243", sender_addr)) {
@@ -354,11 +362,7 @@ fn send_message(peer_ip: String, content: String, msg_id: String, state: tauri::
         let nonce_bytes = rand::random::<[u8; 12]>();
         let nonce = Nonce::from_slice(&nonce_bytes);
         let ciphertext = cipher.encrypt(nonce, content.as_bytes()).map_err(|e| e.to_string())?;
-        let encrypted_msg = format!("{}:{}", 
-            general_purpose::STANDARD.encode(&ciphertext), 
-            general_purpose::STANDARD.encode(&nonce_bytes)
-        );
-
+       
         let line = format!(
             "MSG:{}:{}:{}\n",
             msg_id,
