@@ -23,11 +23,11 @@ use std::time::Instant;
 struct PeerInfo {
     ip: String,
     public_key: PublicKey,
-    username: String, // Nouveau : on stocke le pseudo
+    username: String,
     last_seen: Instant
 }
 
-// État global
+
 struct AppState {
     my_secret: StaticSecret,
     my_public_key: PublicKey,
@@ -41,12 +41,12 @@ struct AppState {
 #[derive(Clone, Serialize, Deserialize, Debug)]
 struct ChatMessage {
     sender_ip: String,
-    sender_name: String, // Nouveau
+    sender_name: String,
     content: String,
     msg_id: String,
 }
 
-// Fonction pour obtenir le chemin du fichier de config
+
 fn get_config_path() -> PathBuf {
     let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
     path.push("airgap");
@@ -131,7 +131,7 @@ fn main() {
         start_typing_listener(handle_typing);
     });
     Ok(())
-    
+
 }) //
         .invoke_handler(tauri::generate_handler![send_message, get_username, set_username, send_typing, set_window_focused])
         .run(tauri::generate_context!())
@@ -180,7 +180,7 @@ fn start_discovery_broadcast(state: Arc<AppState>) {
     loop {
         let pubkey_b64 = general_purpose::STANDARD.encode(state.my_public_key.as_bytes());
         let username = state.my_username.lock().unwrap().clone();
-        
+
         // Format: "AirGap:Ping:CLE_PUB:USERNAME"
         let message = format!("AirGap:Ping:{}:{}", pubkey_b64, username);
 
@@ -197,13 +197,13 @@ fn start_listener(app_handle: tauri::AppHandle, state: Arc<AppState>) {
         match socket.recv_from(&mut buf) {
             Ok((amt, src)) => {
                 let received = String::from_utf8_lossy(&buf[..amt]);
-                
+
                 if received.starts_with("AirGap:Ping:") {
                     let parts: Vec<&str> = received.splitn(4, ':').collect(); // Divise en 4 max
                     if parts.len() >= 3 { // Au minimum Ping:Cle
                         let pubkey_b64 = parts[2];
                         let peer_username = if parts.len() == 4 { parts[3].to_string() } else { "Anonyme".to_string() };
-                        
+
                         if let Ok(pubkey_bytes) = general_purpose::STANDARD.decode(pubkey_b64) {
                             if pubkey_bytes.len() == 32 {
                                 let pubkey_array: [u8; 32] = pubkey_bytes.try_into().unwrap();
@@ -212,7 +212,7 @@ fn start_listener(app_handle: tauri::AppHandle, state: Arc<AppState>) {
                                 if their_public == state.my_public_key { continue; }
 
                                 let peer_ip = src.ip().to_string();
-                                
+
                                 {
                                     let mut peers = state.known_peers.lock().unwrap();
                                     if let Some(peer) = peers.iter_mut().find(|p| p.ip == peer_ip) {
@@ -220,16 +220,16 @@ fn start_listener(app_handle: tauri::AppHandle, state: Arc<AppState>) {
                                         peer.username = peer_username.clone();
                                         peer.last_seen = Instant::now();
                                     } else {
-                                        peers.push(PeerInfo { 
-                                            ip: peer_ip.clone(), 
+                                        peers.push(PeerInfo {
+                                            ip: peer_ip.clone(),
                                             public_key: their_public,
                                             username: peer_username.clone(),
                                             last_seen: Instant::now()
                                         });
                                     }
-                                    
+
                                 }
-                                
+
                                 // On envoie un objet JSON au frontend maintenant
                                 let payload = serde_json::json!({"ip": peer_ip, "name": peer_username});
                                 app_handle.emit("peer-found", payload.to_string()).unwrap();
@@ -243,11 +243,11 @@ fn start_listener(app_handle: tauri::AppHandle, state: Arc<AppState>) {
     }
 }
 
-// ... (TCP SERVER ET HANDLE_TCP_CONNECTION et SEND_MESSAGE inchangés pour l'instant, 
+// ... (TCP SERVER ET HANDLE_TCP_CONNECTION et SEND_MESSAGE inchangés pour l'instant,
 //      on pourra ajouter le pseudo dans les messages reçus plus tard) ...
 
 // Rappel : Il faut remettre les fonctions TCP ici (start_tcp_server, handle_tcp_connection, send_message)
-// car je les ai coupées pour la brièveté. Copie-les depuis ta version précédente 
+// car je les ai coupées pour la brièveté. Copie-les depuis ta version précédente
 // et ajoute juste sender_name: "Inconnu".to_string() dans ChatMessage pour l'instant.
 
 fn start_tcp_server(app_handle: tauri::AppHandle, state: Arc<AppState>) {
@@ -271,7 +271,7 @@ fn handle_tcp_connection(stream: TcpStream, app_handle: tauri::AppHandle, state:
     let mut reader = BufReader::new(&stream);
     let mut line = String::new();
 
-    
+
     if reader.read_line(&mut line).is_ok() {
         let line = line.trim();
         let parts: Vec<&str> = line.splitn(4, ':').collect();
@@ -306,7 +306,7 @@ fn handle_tcp_connection(stream: TcpStream, app_handle: tauri::AppHandle, state:
                     let db = state.db.lock().unwrap();
                     save_message(&db, &sender_addr, &peer_username, &content, &state.db_key).ok();
                 }
-                            
+
                             // Notifie le frontend
                              let msg = ChatMessage {
                     sender_ip:   sender_addr.clone(),
@@ -316,7 +316,7 @@ fn handle_tcp_connection(stream: TcpStream, app_handle: tauri::AppHandle, state:
                 };
 
                 app_handle.emit("message-received", msg).unwrap();
-                            
+
                             let is_focused = *state.window_focused.lock().unwrap();
                 if !is_focused {
                     app_handle
@@ -327,9 +327,9 @@ fn handle_tcp_connection(stream: TcpStream, app_handle: tauri::AppHandle, state:
                         .show()
                         .ok();
                 }
-                            
+
                             // Renvoie ACK
-                            
+
                             if let Ok(mut ack_stream) = TcpStream::connect(
                     format!("{}:4243", sender_addr)
                 ) {
@@ -373,14 +373,14 @@ fn derive_db_key() -> [u8; 32] {
 fn send_message(peer_ip: String, content: String, msg_id: String, state: tauri::State<Arc<AppState>>) -> Result<(), String> {
     let peers = state.known_peers.lock().unwrap();
     let peer_info = peers.iter().find(|p| p.ip == peer_ip);
-    
+
     if let Some(peer) = peer_info {
         let shared_secret = state.my_secret.diffie_hellman(&peer.public_key);
         let cipher = Aes256Gcm::new_from_slice(shared_secret.as_bytes()).unwrap();
         let nonce_bytes = rand::random::<[u8; 12]>();
         let nonce = Nonce::from_slice(&nonce_bytes);
         let ciphertext = cipher.encrypt(nonce, content.as_bytes()).map_err(|e| e.to_string())?;
-       
+
         let line = format!(
             "MSG:{}:{}:{}\n",
             msg_id,
