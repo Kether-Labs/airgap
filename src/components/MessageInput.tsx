@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback } from "react";
 import EmojiPicker, { Theme } from 'emoji-picker-react';
-import compressImage from "../lib/compressImage";
+
 import { invoke } from "@tauri-apps/api/core";
 
 interface MessageInputProps {
@@ -11,8 +11,6 @@ interface MessageInputProps {
 const MessageInput: React.FC<MessageInputProps> = ({ onSendMessage, selectedPeer }) => {
     const [inputValue, setInputValue] = useState("");
     const [showPicker, setShowPicker] = useState(false);
-    const [isCompressing, setIsCompressing] = useState(false);
-    const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Throttle : on envoie un signal typing max toutes les 2s
     const lastTypingSent = useRef<number>(0);
@@ -42,29 +40,6 @@ const MessageInput: React.FC<MessageInputProps> = ({ onSendMessage, selectedPeer
         setShowPicker(false);
     };
 
-    const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        setIsCompressing(true);
-
-        try {
-            const compressedBase64 = await compressImage(file, 800, 0.7);
-            const sizeInBytes = (compressedBase64.length - "data:image/jpeg;base64,".length) * 0.75;
-            const maxSize = 500 * 1024;
-
-            if (sizeInBytes > maxSize) {
-                alert("Image trop lourde même après compression.");
-            } else {
-                onSendMessage(`data:image:${compressedBase64}`);
-            }
-        } catch (err) {
-            console.error(err);
-        } finally {
-            setIsCompressing(false);
-            if (fileInputRef.current) fileInputRef.current.value = "";
-        }
-    };
 
     return (
         <footer className="bg-[#0b141a] px-4 py-3 flex items-end gap-3 relative z-30 w-full min-h-[70px]">
@@ -100,42 +75,19 @@ const MessageInput: React.FC<MessageInputProps> = ({ onSendMessage, selectedPeer
 
             {/* Input Field */}
             <div className="flex-1 bg-[#2a3942] rounded-2xl relative px-5 py-2.5 mb-1 flex items-center min-h-[46px] shadow-sm transition-all focus-within:bg-[#32404b]">
-                {isCompressing ? (
-                    <div className="flex items-center gap-3 text-[#00a884] text-[14px] font-medium animate-pulse">
-                        <div className="animate-spin w-4 h-4 border-2 border-current border-t-transparent rounded-full" />
-                        <span>Traitement de l'image...</span>
-                    </div>
-                ) : (
-                    <input
-                        type="text"
-                        placeholder="Taper un message"
-                        className="w-full bg-transparent text-[#d1d7db] placeholder-[#8696a0] outline-none text-[15px]"
-                        value={inputValue}
-                        onChange={handleChange}
-                        onKeyDown={(e) => e.key === "Enter" && handleSendText()}
-                    />
-                )}
+                (
+                <input
+                    type="text"
+                    placeholder="Taper un message"
+                    className="w-full bg-transparent text-[#d1d7db] placeholder-[#8696a0] outline-none text-[15px]"
+                    value={inputValue}
+                    onChange={handleChange}
+                    onKeyDown={(e) => e.key === "Enter" && handleSendText()}
+                />
             </div>
 
             {/* Action Button */}
-            <button
-                onClick={handleSendText}
-                disabled={isCompressing}
-                className={`mb-1 w-11 h-11 rounded-full flex items-center justify-center transition-all flex-shrink-0 shadow-lg ${inputValue.trim() || isCompressing
-                    ? "bg-[#00a884] text-[#111b21] active:scale-95"
-                    : "text-[#8696a0] hover:text-[#d1d7db]"
-                    }`}
-            >
-                {inputValue.trim() || isCompressing ? (
-                    <svg viewBox="0 0 24 24" height="24" width="24" fill="currentColor" className="ml-0.5">
-                        <path d="M1.101 21.757L23.8 12.028 1.101 2.3l.011 7.912 13.623 1.816-13.623 1.817-.011 7.912z" />
-                    </svg>
-                ) : (
-                    <svg viewBox="0 0 24 24" height="24" width="24" fill="currentColor">
-                        <path d="M11.999 14.942c2.001 0 3.531-1.53 3.531-3.531V4.35c0-2.001-1.53-3.531-3.531-3.531S8.469 2.349 8.469 4.35v7.061c0 2.001 1.53 3.531 3.53 3.531zm6.238-3.53c0 3.531-2.942 6.002-6.237 6.002s-6.237-2.471-6.237-6.002H3.761c0 4.001 3.178 7.297 7.061 7.885v3.884h2.354v-3.884c3.884-.588 7.061-3.884 7.061-7.885h-2.001z" />
-                    </svg>
-                )}
-            </button>
+
         </footer>
     );
 };

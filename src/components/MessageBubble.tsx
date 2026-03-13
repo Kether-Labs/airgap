@@ -1,5 +1,5 @@
 import React from "react";
-import { MessageStatus } from "./ChatWindow";
+
 
 export interface MessageType {
     id: string;
