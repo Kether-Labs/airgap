@@ -131,19 +131,19 @@ pub fn load_history(
     Ok(msgs)
 }
 
-//pub fn save_peer(conn: &Connection, ip: &str, name: &str) -> SqlResult<()> {
-    //conn.execute(
-        //"INSERT INTO peers (ip, name) VALUES (?1, ?2)
-         //ON CONFLICT(ip) DO UPDATE SET name = excluded.name",
-        //params![ip, name],
-    //)?;
-    //Ok(())
-//}
+pub fn save_peer(conn: &Connection, ip: &str, name: &str) -> SqlResult<()> {
+    conn.execute(
+        "INSERT INTO peers (ip, name) VALUES (?1, ?2)
+         ON CONFLICT(ip) DO UPDATE SET name = excluded.name",
+        params![ip, name],
+    )?;
+    Ok(())
+}
 
-//pub fn load_peers(conn: &Connection) -> SqlResult<Vec<(String, String)>> {
-    //let mut stmt = conn.prepare("SELECT ip, name FROM peers")?;
-    //let peers = stmt.query_map([], |row| {
-        //Ok((row.get(0)?, row.get(1)?))
-    //})?.collect::<Result<Vec<_>, _>>()?;
-    //Ok(peers)
-//}
+pub fn load_peers(conn: &Connection) -> SqlResult<Vec<(String, String)>> {
+    let mut stmt = conn.prepare("SELECT ip, name FROM peers")?;
+    let peers = stmt.query_map([], |row| {
+        Ok((row.get(0)?, row.get(1)?))
+    })?.collect::<Result<Vec<_>, _>>()?;
+    Ok(peers)
+}

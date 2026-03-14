@@ -5,7 +5,7 @@ use std::io::{Write, BufReader, BufRead};
 use std::sync::{Arc, Mutex};
 use tauri_plugin_notification::NotificationExt;
 mod db;
-use db::{init_db, save_message, load_history, DbMessage};
+use db::{init_db, save_message, load_history, save_peer, load_peers, DbMessage};
 use rusqlite::Connection;
 
 use std::fs;
@@ -55,6 +55,16 @@ fn get_config_path() -> PathBuf {
     path
 }
 
+
+#[tauri::command]
+fn get_saved_peers(state: tauri::State<Arc<AppState>>) -> Vec<serde_json::Value> {
+    let db = state.db.lock().unwrap();
+    load_peers(&db)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(ip, name)| serde_json::json!({ "ip": ip, "name": name }))
+        .collect()
+}
 fn main() {
     let secret = StaticSecret::random_from_rng(OsRng);
     let public = PublicKey::from(&secret);
@@ -76,7 +86,15 @@ fn main() {
 
     tauri::Builder::default()
         .manage(state.clone())
-        .invoke_handler(tauri::generate_handler![send_message, get_username, set_username, get_history])
+        .invoke_handler(tauri::generate_handler![
+    send_message,
+    get_username,
+    set_username,
+    get_history,
+    send_typing,
+    set_window_focused,
+    get_saved_peers
+])
         .setup(move |app| {
     let app_handle = app.handle();
 
@@ -133,7 +151,7 @@ fn main() {
     Ok(())
 
 }) //
-        .invoke_handler(tauri::generate_handler![send_message, get_username, set_username, send_typing, set_window_focused])
+
         .run(tauri::generate_context!())
         .expect("Error while running Tauri application");
 }
@@ -202,7 +220,11 @@ fn start_listener(app_handle: tauri::AppHandle, state: Arc<AppState>) {
                     let parts: Vec<&str> = received.splitn(4, ':').collect(); // Divise en 4 max
                     if parts.len() >= 3 { // Au minimum Ping:Cle
                         let pubkey_b64 = parts[2];
-                        let peer_username = if parts.len() == 4 { parts[3].to_string() } else { "Anonyme".to_string() };
+                        let peer_username = if parts.len() == 4 { 
+    parts[3].trim().to_string() 
+} else { 
+    "Anonyme".to_string() 
+};
 
                         if let Ok(pubkey_bytes) = general_purpose::STANDARD.decode(pubkey_b64) {
                             if pubkey_bytes.len() == 32 {
@@ -228,11 +250,17 @@ fn start_listener(app_handle: tauri::AppHandle, state: Arc<AppState>) {
                                         });
                                     }
 
+
+
                                 }
 
                                 // On envoie un objet JSON au frontend maintenant
                                 let payload = serde_json::json!({"ip": peer_ip, "name": peer_username});
                                 app_handle.emit("peer-found", payload.to_string()).unwrap();
+
+                                let db = state.db.lock().unwrap();
+                                save_peer(&db, &peer_ip, &peer_username).ok();
+                                drop(db);
                             }
                         }
                     }
@@ -328,7 +356,7 @@ fn handle_tcp_connection(stream: TcpStream, app_handle: tauri::AppHandle, state:
                         .ok();
                 }
 
-                            // Renvoie ACK
+                            
 
                             if let Ok(mut ack_stream) = TcpStream::connect(
                     format!("{}:4243", sender_addr)
@@ -371,34 +399,44 @@ fn derive_db_key() -> [u8; 32] {
 }
 #[tauri::command]
 fn send_message(peer_ip: String, content: String, msg_id: String, state: tauri::State<Arc<AppState>>) -> Result<(), String> {
-    let peers = state.known_peers.lock().unwrap();
-    let peer_info = peers.iter().find(|p| p.ip == peer_ip);
+    
+    // Clone ce dont on a besoin, puis libère le lock IMMÉDIATEMENT
+    let peer_data = {
+        let peers = state.known_peers.lock().unwrap();
+        peers.iter().find(|p| p.ip == peer_ip).map(|p| p.public_key.clone())
+    }; // ← lock libéré ici
 
-    if let Some(peer) = peer_info {
-        let shared_secret = state.my_secret.diffie_hellman(&peer.public_key);
-        let cipher = Aes256Gcm::new_from_slice(shared_secret.as_bytes()).unwrap();
-        let nonce_bytes = rand::random::<[u8; 12]>();
-        let nonce = Nonce::from_slice(&nonce_bytes);
-        let ciphertext = cipher.encrypt(nonce, content.as_bytes()).map_err(|e| e.to_string())?;
+    let peer_pubkey = peer_data.ok_or("Destinataire inconnu".to_string())?;
 
-        let line = format!(
-            "MSG:{}:{}:{}\n",
-            msg_id,
-            general_purpose::STANDARD.encode(&ciphertext),
-            general_purpose::STANDARD.encode(&nonce_bytes)
-        );
-        let addr = format!("{}:4243", peer_ip);
-        let mut stream = TcpStream::connect(&addr).map_err(|e| e.to_string())?;
-        stream.write_all(line.as_bytes()).map_err(|e| e.to_string())?;
+    let shared_secret = state.my_secret.diffie_hellman(&peer_pubkey);
+    let cipher = Aes256Gcm::new_from_slice(shared_secret.as_bytes()).unwrap();
+    let nonce_bytes = rand::random::<[u8; 12]>();
+    let nonce = Nonce::from_slice(&nonce_bytes);
+    let ciphertext = cipher.encrypt(nonce, content.as_bytes()).map_err(|e| e.to_string())?;
 
-        let username = state.my_username.lock().unwrap().clone();
-        let db = state.db.lock().unwrap();
-        save_message(&db, &peer_ip, &username, &content,&state.db_key).ok();
+    let line = format!(
+        "MSG:{}:{}:{}\n",
+        msg_id,
+        general_purpose::STANDARD.encode(&ciphertext),
+        general_purpose::STANDARD.encode(&nonce_bytes)
+    );
 
-        Ok(())
-    } else {
-        Err("Destinataire inconnu".to_string())
-    }
+    // Connexion TCP avec timeout — évite de bloquer indéfiniment
+    let addr = format!("{}:4243", peer_ip);
+    let stream = TcpStream::connect_timeout(
+        &addr.parse().map_err(|e: std::net::AddrParseError| e.to_string())?,
+        Duration::from_secs(5) // ← timeout 5s
+    ).map_err(|e| e.to_string())?;
+    
+    let mut stream = stream;
+    stream.write_all(line.as_bytes()).map_err(|e| e.to_string())?;
+
+    // Sauvegarde DB
+    let username = state.my_username.lock().unwrap().clone();
+    let db = state.db.lock().unwrap();
+    save_message(&db, &peer_ip, &username, &content, &state.db_key).ok();
+
+    Ok(())
 }
 
 fn start_typing_listener(app_handle: tauri::AppHandle) {
@@ -442,3 +480,5 @@ fn send_typing(peer_ip: String, state: tauri::State<Arc<AppState>>) {
 fn set_window_focused(focused: bool, state: tauri::State<Arc<AppState>>) {
     *state.window_focused.lock().unwrap() = focused;
 }
+
+
