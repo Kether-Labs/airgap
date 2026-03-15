@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -48,13 +48,47 @@ function App() {
   const [peers, setPeers] = useState<Peer[]>([]);
   const [selectedPeer, setSelectedPeer] = useState<string | null>(null);
 
+  const [conflictPeers, setConflictPeers] = useState<Record<string, string>>({});
+
   const [username, setUsername] = useState<string | null>(null);
   const [isSystemReady, setIsSystemReady] = useState<boolean>(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState<boolean>(false);
   const [typingPeers, setTypingPeers] = useState<Record<string, ReturnType<typeof setTimeout>>>({});
   const [conversations, setConversations] = useState<Record<string, MessageType[]>>({});
 
+  const [usernameConflictAlert, setUsernameConflictAlert] = useState(false);
+  const [isCheckingUsername, setIsCheckingUsername] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const pendingUsername = useRef<string | null>(null);
 
+  useEffect(() => {
+    const setup = async () => {
+      const unlisten = await listen<string>("username-conflict", (event) => {
+        const data = JSON.parse(event.payload);
+
+        // Cas 1 — conflit pendant le login (username pas encore validé)
+        if (pendingUsername.current === data.name) {
+          setIsCheckingUsername(false);
+          setLoginError(
+            `"${data.name}" est déjà utilisé par quelqu'un sur ce réseau. Choisis un autre pseudo.`
+          );
+          pendingUsername.current = null;
+          // Annule le username côté Rust
+          invoke("set_username", { name: "" }).catch(() => { });
+          return;
+        }
+
+        // Cas 2 — conflit après login (déjà connecté)
+        setConflictPeers((prev) => ({ ...prev, [data.ip]: data.name }));
+        if (data.name === username) {
+          setUsernameConflictAlert(true);
+        }
+      });
+      return unlisten;
+    };
+    const p = setup();
+    return () => { p.then((fn) => fn && fn()); };
+  }, [username]);
   useEffect(() => {
     const appWindow = getCurrentWindow();
 
@@ -247,11 +281,29 @@ function App() {
 
   // Actions
   const handleLogin = async (name: string) => {
+    setLoginError(null);
+    setIsCheckingUsername(true);
+    pendingUsername.current = name;
+
     try {
+      // 1. Enregistre le username → Rust commence à broadcaster
       await invoke("set_username", { name });
-      setUsername(name);
+
+      // 2. Attend 6s (un cycle broadcast + marge)
+      await new Promise((resolve) => setTimeout(resolve, 6000));
+
+      // 3. Si on est toujours en train de checker → pas de conflit → valide
+      if (pendingUsername.current === name) {
+        pendingUsername.current = null;
+        setIsCheckingUsername(false);
+        setUsername(name); // ← confirme le login
+      }
+      // Si conflit → le listener a déjà annulé et affiché l'erreur
+
     } catch (e) {
-      console.error("Erreur d'enregistrement", e);
+      console.error("Erreur login", e);
+      setIsCheckingUsername(false);
+      setLoginError("Une erreur est survenue.");
     }
   };
 
@@ -318,7 +370,9 @@ function App() {
 
   // Rendu conditionnel — écran de login si pas de username
   if (username === null || username === "") {
-    return <LoginScreen onLogin={handleLogin} isSystemReady={isSystemReady} />;
+    return <LoginScreen onLogin={handleLogin} isSystemReady={isSystemReady} isChecking={isCheckingUsername} // ← nouveau
+      error={loginError}              // ← nouveau
+      onClearError={() => setLoginError(null)} />;
   }
 
   const currentMessages = selectedPeer ? conversations[selectedPeer] || [] : [];
@@ -334,6 +388,7 @@ function App() {
     <div className="flex h-screen bg-[#111b21] text-[#e9edef] font-sans overflow-hidden">
       <Sidebar
         peers={peers}
+        conflictPeers={conflictPeers}
         selectedPeer={selectedPeer}
         setSelectedPeer={handleSelectPeer} // ← remplacé par handleSelectPeer
         username={username}

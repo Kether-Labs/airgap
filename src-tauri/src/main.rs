@@ -238,6 +238,21 @@ fn start_listener(app_handle: tauri::AppHandle, state: Arc<AppState>) {
                                 {
                                     let mut peers = state.known_peers.lock().unwrap();
                                     if let Some(peer) = peers.iter_mut().find(|p| p.ip == peer_ip) {
+
+                                        let username_taken = {
+    let peers = state.known_peers.lock().unwrap();
+    peers.iter().any(|p| p.username == peer_username && p.ip != peer_ip)
+};
+
+if username_taken {
+    app_handle.emit("username-conflict", 
+        serde_json::json!({
+            "ip": peer_ip,
+            "name": peer_username
+        }).to_string()
+    ).unwrap();
+    continue;
+}
                                         peer.public_key = their_public;
                                         peer.username = peer_username.clone();
                                         peer.last_seen = Instant::now();
