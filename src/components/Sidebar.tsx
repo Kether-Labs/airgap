@@ -43,7 +43,7 @@ const Sidebar: React.FC<SidebarProps> = ({ peers, selectedPeer, setSelectedPeer,
 
             {/* MON PROFIL - Refined & Unique */}
             <div className="px-6 py-8 relative z-10">
-                <div className=" p-4 rounded-3xl backdrop-blur-md shadow-lg group hover:bg-[#202c33]/40 transition-all duration-300">
+                <div className="p-4 rounded-3xl backdrop-blur-md shadow-lg group hover:bg-[#202c33]/40 transition-all duration-300">
                     <div className="flex items-center gap-4">
                         <div className="relative cursor-pointer" onClick={() => { setIsEditingName(true); setTempName(username); }}>
                             <div className="w-16 h-16 rounded-[22px] bg-gradient-to-tr from-[#00a884] to-[#53bdeb] p-[2px] shadow-xl transition-transform group-hover:scale-105 active:scale-95 rotate-3 group-hover:rotate-0 duration-500">

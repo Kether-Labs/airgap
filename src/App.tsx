@@ -55,7 +55,7 @@ function App() {
   const [isLoadingHistory, setIsLoadingHistory] = useState<boolean>(false);
   const [typingPeers, setTypingPeers] = useState<Record<string, ReturnType<typeof setTimeout>>>({});
   const [conversations, setConversations] = useState<Record<string, MessageType[]>>({});
-
+  const [myIp, setMyIp] = useState<string>("");
   const [usernameConflictAlert, setUsernameConflictAlert] = useState(false);
   const [isCheckingUsername, setIsCheckingUsername] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -78,7 +78,7 @@ function App() {
           return;
         }
 
-        // Cas 2 — conflit après login (déjà connecté)
+
         setConflictPeers((prev) => ({ ...prev, [data.ip]: data.name }));
         if (data.name === username) {
           setUsernameConflictAlert(true);
@@ -89,6 +89,16 @@ function App() {
     const p = setup();
     return () => { p.then((fn) => fn && fn()); };
   }, [username]);
+
+  useEffect(() => {
+    invoke<{ ip: string; name: string }[]>("get_saved_peers")
+      .then((saved) => {
+        // ← Filtre notre propre IP
+        const filtered = saved.filter((p) => p.ip !== myIp);
+        if (filtered.length > 0) setPeers(filtered);
+      })
+      .catch(console.error);
+  }, [myIp]);
   useEffect(() => {
     const appWindow = getCurrentWindow();
 
@@ -110,6 +120,10 @@ function App() {
         console.error("Erreur get_username", e);
         setIsSystemReady(true);
       });
+
+    invoke<string>("get_my_ip")
+      .then((ip) => setMyIp(ip))
+      .catch(console.error);
   }, []);
 
   useEffect(() => {
@@ -162,6 +176,8 @@ function App() {
         try {
           const data = JSON.parse(event.payload);
           const peerIp: string = data.ip;
+
+          if (peerIp === myIp) return;
           const peerName: string = data.name;
 
           setPeers((current) => {

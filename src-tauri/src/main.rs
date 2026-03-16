@@ -93,7 +93,8 @@ fn main() {
     get_history,
     send_typing,
     set_window_focused,
-    get_saved_peers
+    get_saved_peers,
+    get_my_ip
 ])
         .setup(move |app| {
     let app_handle = app.handle();
@@ -482,6 +483,14 @@ fn get_history(peer_ip: String, state: tauri::State<Arc<AppState>>) -> Vec<DbMes
     load_history(&db, &peer_ip,&state.db_key).unwrap_or_default()
 }
 
+#[tauri::command]
+fn get_my_ip() -> String {
+    // Récupère l'IP locale réelle
+    let socket = UdpSocket::bind("0.0.0.0:0").unwrap();
+    socket.connect("8.8.8.8:80").unwrap();
+    // Astuce : connect UDP sans envoyer de paquet → révèle l'IP sortante
+    socket.local_addr().unwrap().ip().to_string()
+}
 #[tauri::command]
 fn send_typing(peer_ip: String, state: tauri::State<Arc<AppState>>) {
     let socket = UdpSocket::bind("0.0.0.0:0").unwrap();
