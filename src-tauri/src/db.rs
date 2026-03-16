@@ -45,7 +45,8 @@ pub fn init_db() -> SqlResult<Connection> {
     conn.execute(
     "CREATE TABLE IF NOT EXISTS peers (
         ip   TEXT PRIMARY KEY,
-        name TEXT NOT NULL
+        name TEXT NOT NULL,
+        last_seen INTEGER NOT NULL  -- timestamp Unix
     )",
     [],
 )?;
@@ -132,17 +133,30 @@ pub fn load_history(
 }
 
 pub fn save_peer(conn: &Connection, ip: &str, name: &str) -> SqlResult<()> {
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
     conn.execute(
-        "INSERT INTO peers (ip, name) VALUES (?1, ?2)
-         ON CONFLICT(ip) DO UPDATE SET name = excluded.name",
-        params![ip, name],
+        "INSERT INTO peers (ip, name, last_seen) VALUES (?1, ?2, ?3)
+         ON CONFLICT(ip) DO UPDATE SET name = excluded.name, last_seen = excluded.last_seen",
+        params![ip, name, now],
     )?;
     Ok(())
 }
 
 pub fn load_peers(conn: &Connection) -> SqlResult<Vec<(String, String)>> {
-    let mut stmt = conn.prepare("SELECT ip, name FROM peers")?;
-    let peers = stmt.query_map([], |row| {
+
+     let cutoff = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() - (7 * 24 * 3600); // 7 jours
+    let mut stmt = conn.prepare(
+        "SELECT ip, name FROM peers WHERE last_seen > ?1 ORDER BY last_seen DESC"
+    )?;
+    let peers = stmt.query_map(params![cutoff], |row| {
         Ok((row.get(0)?, row.get(1)?))
     })?.collect::<Result<Vec<_>, _>>()?;
     Ok(peers)

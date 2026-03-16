@@ -1,6 +1,61 @@
 import React, { useState } from "react";
 import logo from "../assets/logo.png";
 
+interface PeerItemProps {
+    peer: { ip: string; name: string };
+    isOnline: boolean;
+    isSelected: boolean;
+    hasConflict: boolean;
+    onClick: () => void;
+}
+
+const PeerItem: React.FC<PeerItemProps> = ({ peer, isOnline, isSelected, hasConflict, onClick }) => {
+    return (
+        <div
+            onClick={onClick}
+            className={`group flex items-center gap-4 px-4 py-4 cursor-pointer rounded-[24px] transition-all duration-500 relative overflow-hidden
+                ${isSelected ? 'bg-gradient-to-r from-[#00a884]/20 to-transparent border border-[#00a884]/20' : 'hover:bg-[#202c33]/20 border border-transparent'}
+                ${!isOnline ? 'opacity-60 hover:opacity-100' : ''}
+            `}
+        >
+            {isSelected && <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#00a884] rounded-r-full shadow-[0_0_15px_#00a884]"></div>}
+
+            {/* Avatar with dynamic shape */}
+            <div className="relative flex-shrink-0">
+                <div className={`w-14 h-14 rounded-2xl bg-[#202c33] flex items-center justify-center text-white font-black text-xl shadow-lg transition-transform duration-500 group-hover:scale-105 group-hover:shadow-[#00a884]/5
+                    ${isSelected ? 'shadow-[#00a884]/10 group-hover:rotate-0' : '-rotate-1 group-hover:rotate-0'}
+                    ${!isOnline ? 'grayscale' : ''}
+                `}>
+                    {peer.name.charAt(0).toUpperCase()}
+                </div>
+                {/* Conflict Badge */}
+                {hasConflict ? (
+                    <div className="absolute -top-1.5 -right-1.5 w-6 h-6 bg-amber-500 rounded-xl flex items-center justify-center text-[11px] font-black text-black shadow-lg border-2 border-[#111b21] animate-bounce">
+                        !
+                    </div>
+                ) : isOnline ? (
+                    <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-[#00a884] border-[3px] border-[#111b21] rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity" />
+                ) : (
+                    <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-[#8696a0] border-[3px] border-[#111b21] rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity" />
+                )}
+            </div>
+
+            <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between mb-1">
+                    <span className={`text-[16px] font-bold truncate transition-colors ${isSelected ? 'text-white' : 'text-[#e9edef] group-hover:text-white'}`}>
+                        {peer.name}
+                    </span>
+                    {hasConflict && <span className="text-amber-400 text-[9px] font-black uppercase tracking-tighter ml-1">Conflit</span>}
+                </div>
+                <div className="flex items-center gap-2">
+                    <div className={`w-1.5 h-1.5 rounded-full ${isSelected && isOnline ? 'bg-[#00a884] animate-pulse' : 'bg-[#46535d]'}`}></div>
+                    <span className="text-[#46535d] text-[12px] font-medium truncate italic">{peer.ip}</span>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 interface SidebarProps {
     peers: { ip: string; name: string }[];
     selectedPeer: string | null;
@@ -8,11 +63,15 @@ interface SidebarProps {
     username: string;
     onUpdateUsername: (name: string) => void;
     conflictPeers: Record<string, string>;
+    activePeerIps: string[];
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ peers, selectedPeer, setSelectedPeer, username, onUpdateUsername, conflictPeers }) => {
+const Sidebar: React.FC<SidebarProps> = ({ peers, selectedPeer, setSelectedPeer, username, onUpdateUsername, conflictPeers, activePeerIps }) => {
     const [isEditingName, setIsEditingName] = useState(false);
     const [tempName, setTempName] = useState(username);
+
+    const onlinePeers = peers.filter(p => activePeerIps.includes(p.ip));
+    const offlinePeers = peers.filter(p => !activePeerIps.includes(p.ip));
 
     const handleSaveName = () => {
         if (tempName.trim() && tempName !== username) {
@@ -103,7 +162,7 @@ const Sidebar: React.FC<SidebarProps> = ({ peers, selectedPeer, setSelectedPeer,
                         <span className="text-xs font-bold text-[#e9edef] uppercase tracking-[0.2em]">Pairs Locaux</span>
                     </div>
                     <span className="text-[#00a884] text-[10px] font-black bg-[#00a884]/10 px-2.5 py-1 rounded-lg">
-                        {peers.length} ACTIFS
+                        {onlinePeers.length} ACTIFS
                     </span>
                 </div>
 
@@ -118,51 +177,44 @@ const Sidebar: React.FC<SidebarProps> = ({ peers, selectedPeer, setSelectedPeer,
                             </p>
                         </div>
                     ) : (
-                        peers.map((peer) => {
-                            const isConflict = conflictPeers[peer.ip] !== undefined;
-                            const isSelected = selectedPeer === peer.ip;
-
-                            return (
-                                <div
-                                    key={peer.ip}
-                                    onClick={() => setSelectedPeer(peer.ip)}
-                                    className={`group flex items-center gap-4 px-4 py-4 cursor-pointer rounded-[24px] transition-all duration-500 relative overflow-hidden
-                                        ${isSelected ? 'bg-gradient-to-r from-[#00a884]/20 to-transparent border border-[#00a884]/20' : 'hover:bg-[#202c33]/20 border border-transparent'}
-                                    `}
-                                >
-                                    {isSelected && <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#00a884] rounded-r-full shadow-[0_0_15px_#00a884]"></div>}
-
-                                    {/* Avatar with dynamic shape */}
-                                    <div className="relative flex-shrink-0">
-                                        <div className={`w-14 h-14 rounded-2xl bg-[#202c33] flex items-center justify-center text-white font-black text-xl shadow-lg transition-transform duration-500 group-hover:scale-105 group-hover:shadow-[#00a884]/5
-                                            ${isSelected ? 'shadow-[#00a884]/10 group-hover:rotate-0' : '-rotate-1 group-hover:rotate-0'}`}>
-                                            {peer.name.charAt(0).toUpperCase()}
-                                        </div>
-                                        {/* Conflict Badge */}
-                                        {isConflict ? (
-                                            <div className="absolute -top-1.5 -right-1.5 w-6 h-6 bg-amber-500 rounded-xl flex items-center justify-center text-[11px] font-black text-black shadow-lg border-2 border-[#111b21] animate-bounce">
-                                                !
-                                            </div>
-                                        ) : (
-                                            <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-[#00a884] border-[3px] border-[#111b21] rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity" />
-                                        )}
+                        <>
+                            {onlinePeers.length > 0 && (
+                                <>
+                                    <div className="text-[#00a884] text-[11px] font-semibold px-4 py-2 mt-2 tracking-wider">
+                                        CONTACTS EN LIGNE ({onlinePeers.length})
                                     </div>
+                                    {onlinePeers.map((peer) => (
+                                        <PeerItem
+                                            key={peer.ip}
+                                            peer={peer}
+                                            isOnline={true}
+                                            isSelected={selectedPeer === peer.ip}
+                                            hasConflict={!!conflictPeers[peer.ip]}
+                                            onClick={() => setSelectedPeer(peer.ip)}
+                                        />
+                                    ))}
+                                </>
+                            )}
 
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center justify-between mb-1">
-                                            <span className={`text-[16px] font-bold truncate transition-colors ${isSelected ? 'text-white' : 'text-[#e9edef] group-hover:text-white'}`}>
-                                                {peer.name}
-                                            </span>
-                                            {isConflict && <span className="text-amber-400 text-[9px] font-black uppercase tracking-tighter ml-1">Conflit</span>}
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <div className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-[#00a884] animate-pulse' : 'bg-[#46535d]'}`}></div>
-                                            <span className="text-[#46535d] text-[12px] font-medium truncate italic">{peer.ip}</span>
-                                        </div>
+                            {/* ── HORS LIGNE ── */}
+                            {offlinePeers.length > 0 && (
+                                <>
+                                    <div className="text-[#8696a0] text-[11px] font-semibold px-4 py-2 mt-4 tracking-wider">
+                                        HORS LIGNE ({offlinePeers.length})
                                     </div>
-                                </div>
-                            );
-                        })
+                                    {offlinePeers.map((peer) => (
+                                        <PeerItem
+                                            key={peer.ip}
+                                            peer={peer}
+                                            isOnline={false}
+                                            isSelected={selectedPeer === peer.ip}
+                                            hasConflict={!!conflictPeers[peer.ip]}
+                                            onClick={() => setSelectedPeer(peer.ip)}
+                                        />
+                                    ))}
+                                </>
+                            )}
+                        </>
                     )}
                 </div>
             </div>

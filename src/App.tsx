@@ -48,6 +48,7 @@ function App() {
   const [peers, setPeers] = useState<Peer[]>([]);
   const [selectedPeer, setSelectedPeer] = useState<string | null>(null);
 
+  const [activePeerIps, setActivePeerIps] = useState<string[]>([]);
   const [conflictPeers, setConflictPeers] = useState<Record<string, string>>({});
 
   const [username, setUsername] = useState<string | null>(null);
@@ -56,7 +57,7 @@ function App() {
   const [typingPeers, setTypingPeers] = useState<Record<string, ReturnType<typeof setTimeout>>>({});
   const [conversations, setConversations] = useState<Record<string, MessageType[]>>({});
   const [myIp, setMyIp] = useState<string>("");
-  const [usernameConflictAlert, setUsernameConflictAlert] = useState(false);
+
   const [isCheckingUsername, setIsCheckingUsername] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const pendingUsername = useRef<string | null>(null);
@@ -80,9 +81,6 @@ function App() {
 
 
         setConflictPeers((prev) => ({ ...prev, [data.ip]: data.name }));
-        if (data.name === username) {
-          setUsernameConflictAlert(true);
-        }
       });
       return unlisten;
     };
@@ -158,6 +156,9 @@ function App() {
     const setup = async () => {
       const unlisten = await listen<string>("peer-left", (event) => {
         const lostIp = event.payload;
+
+        // ← Retire des actifs
+        setActivePeerIps((current) => current.filter((ip) => ip !== lostIp));
         setPeers((current) => current.filter((p) => p.ip !== lostIp));
 
         // Si on était en train de chatter avec lui → désélectionne
@@ -178,6 +179,10 @@ function App() {
           const peerIp: string = data.ip;
 
           if (peerIp === myIp) return;
+
+          setActivePeerIps((current) =>
+            current.includes(peerIp) ? current : [...current, peerIp]
+          );
           const peerName: string = data.name;
 
           setPeers((current) => {
@@ -409,6 +414,7 @@ function App() {
         setSelectedPeer={handleSelectPeer} // ← remplacé par handleSelectPeer
         username={username}
         onUpdateUsername={handleUpdateUsername}
+        activePeerIps={activePeerIps}
       />
 
       {selectedPeer ? (
