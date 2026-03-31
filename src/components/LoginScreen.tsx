@@ -6,10 +6,11 @@ interface LoginScreenProps {
     isSystemReady: boolean;
     isChecking: boolean;
     error: string | null;
+    usernameConflictAlert: boolean;
     onClearError: () => void;
 }
 
-const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, isSystemReady, isChecking, error, onClearError }) => {
+const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, isSystemReady, usernameConflictAlert, isChecking, error, onClearError }) => {
     const [inputName, setInputName] = useState("");
     const [isLoading, setIsLoading] = useState(false);
 
@@ -64,6 +65,11 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, isSystemReady, isChe
                     </div>
 
                     <div className="w-full space-y-8">
+                        {usernameConflictAlert && (
+                            <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 bg-[#202c33] text-[#8696a0] text-xs px-3 py-1 rounded-full shadow">
+                                Le nom d'utilisateur "{inputName}" est déjà utilisé par quelqu'un sur ce réseau. Choisis un autre pseudo.
+                            </div>
+                        )}
                         <div className="relative group">
                             <input
                                 type="text"

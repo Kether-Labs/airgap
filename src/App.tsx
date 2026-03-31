@@ -32,6 +32,7 @@ export interface MessageType {
   sender: string;
   text: string;
   time: string;
+  status?: "sending" | "sent" | "delivered" | "failed";
 }
 
 // Convertit un DbMessage en MessageType (pas de timestamp stocké en lisible → on affiche rien)
@@ -57,36 +58,75 @@ function App() {
   const [typingPeers, setTypingPeers] = useState<Record<string, ReturnType<typeof setTimeout>>>({});
   const [conversations, setConversations] = useState<Record<string, MessageType[]>>({});
   const [myIp, setMyIp] = useState<string>("");
-
+  const [usernameConflictAlert, setUsernameConflictAlert] = useState(false);
   const [isCheckingUsername, setIsCheckingUsername] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const pendingUsername = useRef<string | null>(null);
 
+  const handleRetryMessage = async (msg: MessageType) => {
+    if (!selectedPeer) return;
+
+    // Remet en "sending"
+    setConversations((prev) => ({
+      ...prev,
+      [selectedPeer]: (prev[selectedPeer] || []).map((m) =>
+        m.id === msg.id ? { ...m, status: "sending" } : m
+      ),
+    }));
+
+    try {
+      await invoke("send_message", {
+        peerIp: selectedPeer,
+        content: msg.text,
+        msgId: msg.id, // réutilise le même ID
+      });
+
+      setConversations((prev) => ({
+        ...prev,
+        [selectedPeer]: (prev[selectedPeer] || []).map((m) =>
+          m.id === msg.id ? { ...m, status: "sent" } : m
+        ),
+      }));
+    } catch (e) {
+      setConversations((prev) => ({
+        ...prev,
+        [selectedPeer]: (prev[selectedPeer] || []).map((m) =>
+          m.id === msg.id ? { ...m, status: "failed" } : m
+        ),
+      }));
+    }
+  };
   useEffect(() => {
     const setup = async () => {
       const unlisten = await listen<string>("username-conflict", (event) => {
         const data = JSON.parse(event.payload);
 
-        // Cas 1 — conflit pendant le login (username pas encore validé)
-        if (pendingUsername.current === data.name) {
+        console.log("username-conflict reçu:", data); // ← log pour debug
+
+        // Cas 1 — conflit pendant le login
+        if (pendingUsername.current !== null &&
+          pendingUsername.current === data.name) {
           setIsCheckingUsername(false);
           setLoginError(
-            `"${data.name}" est déjà utilisé par quelqu'un sur ce réseau. Choisis un autre pseudo.`
+            `"${data.name}" est déjà utilisé sur ce réseau. Choisis un autre pseudo.`
           );
           pendingUsername.current = null;
-          // Annule le username côté Rust
           invoke("set_username", { name: "" }).catch(() => { });
           return;
         }
 
-
+        // Cas 2 — conflit après login
         setConflictPeers((prev) => ({ ...prev, [data.ip]: data.name }));
+        if (data.name === username) {
+          setUsernameConflictAlert(true);
+        }
       });
       return unlisten;
     };
+
     const p = setup();
     return () => { p.then((fn) => fn && fn()); };
-  }, [username]);
+  }, []);
 
   useEffect(() => {
     invoke<{ ip: string; name: string }[]>("get_saved_peers")
@@ -159,16 +199,21 @@ function App() {
 
         // ← Retire des actifs
         setActivePeerIps((current) => current.filter((ip) => ip !== lostIp));
-        setPeers((current) => current.filter((p) => p.ip !== lostIp));
-
-        // Si on était en train de chatter avec lui → désélectionne
-        setSelectedPeer((current) => current === lostIp ? null : current);
       });
       return unlisten;
     };
 
     const promise = setup();
     return () => { promise.then((fn) => fn && fn()); };
+  }, []);
+
+  // Notifie le réseau qu'on quitte l'application
+  useEffect(() => {
+    const handleUnload = () => {
+      invoke("notify_offline").catch(() => { });
+    };
+    window.addEventListener("beforeunload", handleUnload);
+    return () => window.removeEventListener("beforeunload", handleUnload);
   }, []);
   // 2. Listener Pairs UDP
   useEffect(() => {
@@ -347,51 +392,63 @@ function App() {
     });
   };
 
+  const generateUUID = () => {
+    return 'xxxx-xxxx-xxxx-xxxx'.replace(/[x]/g, () => {
+      const r = Math.random() * 16 | 0;
+      return r.toString(16);
+    });
+  };
   const handleSendMessage = async (content: string) => {
     if (!selectedPeer) return;
 
+    const msgId = generateUUID();
     const newMessage: MessageType = {
-      id: crypto.randomUUID(),
+      id: msgId,
       sender: "Moi",
       text: content,
       time: new Date().toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit",
       }),
+      status: "sending",
     };
 
-    // Optimistic UI — on affiche immédiatement
-    setConversations((prev) => {
-      const existing = prev[selectedPeer] || [];
-      return {
-        ...prev,
-        [selectedPeer]: [...existing, newMessage],
-      };
-    });
+    // Affiche immédiatement avec statut "sending"
+    setConversations((prev) => ({
+      ...prev,
+      [selectedPeer]: [...(prev[selectedPeer] || []), newMessage],
+    }));
 
     try {
       await invoke("send_message", {
         peerIp: selectedPeer,
         content,
+        msgId,
       });
-      // La sauvegarde DB est gérée côté Rust dans send_message
+
+      // ✅ Met à jour le statut → "sent" (ne rajoute PAS le message)
+      setConversations((prev) => ({
+        ...prev,
+        [selectedPeer]: (prev[selectedPeer] || []).map((m) =>
+          m.id === msgId ? { ...m, status: "sent" } : m
+        ),
+      }));
+
     } catch (e) {
       console.error("Erreur d'envoi:", e);
-      // Rollback optimiste en cas d'échec
-      setConversations((prev) => {
-        const existing = prev[selectedPeer] || [];
-        return {
-          ...prev,
-          [selectedPeer]: existing.filter((m) => m.id !== newMessage.id),
-        };
-      });
-      alert("Impossible d'envoyer le message. Le pair est peut-être hors ligne.");
+      // ✅ Marque comme "failed"
+      setConversations((prev) => ({
+        ...prev,
+        [selectedPeer]: (prev[selectedPeer] || []).map((m) =>
+          m.id === msgId ? { ...m, status: "failed" } : m
+        ),
+      }));
     }
   };
 
   // Rendu conditionnel — écran de login si pas de username
   if (username === null || username === "") {
-    return <LoginScreen onLogin={handleLogin} isSystemReady={isSystemReady} isChecking={isCheckingUsername} // ← nouveau
+    return <LoginScreen onLogin={handleLogin} usernameConflictAlert={usernameConflictAlert} isSystemReady={isSystemReady} isChecking={isCheckingUsername} // ← nouveau
       error={loginError}              // ← nouveau
       onClearError={() => setLoginError(null)} />;
   }
@@ -431,6 +488,7 @@ function App() {
             messages={currentMessages}
             isTyping={isSelectedPeerTyping}
             onDeleteMessage={(id) => handleDeleteMessage(selectedPeer, id)}
+            onRetryMessage={handleRetryMessage}
           />
           <MessageInput
             onSendMessage={handleSendMessage}

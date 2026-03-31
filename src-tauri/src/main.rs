@@ -107,6 +107,7 @@ fn main() {
     });
 
     tauri::Builder::default()
+    .plugin(tauri_plugin_notification::init()) 
         .manage(state.clone())
         .invoke_handler(tauri::generate_handler![
             send_message,
@@ -116,7 +117,8 @@ fn main() {
             send_typing,
             set_window_focused,
             get_saved_peers,
-            get_my_ip
+            get_my_ip,
+            notify_offline
         ])
         .setup(move |app| {
             let app_handle = app.handle();
@@ -218,11 +220,13 @@ fn get_history(peer_ip: String, state: tauri::State<Arc<AppState>>) -> Vec<DbMes
 
 #[tauri::command]
 fn send_typing(peer_ip: String, state: tauri::State<Arc<AppState>>) {
-    let socket = UdpSocket::bind("0.0.0.0:0").unwrap();
-    let username = state.my_username.lock().unwrap().clone();
-    let msg = format!("AirGap:Typing:{}", username);
-    let addr = format!("{}:4244", peer_ip);
-    socket.send_to(msg.as_bytes(), addr).ok();
+    let local_ip = get_local_ip();
+    if let Ok(socket) = UdpSocket::bind(format!("{}:0", local_ip)) {
+        let username = state.my_username.lock().unwrap().clone();
+        let msg = format!("AirGap:Typing:{}", username);
+        let addr = format!("{}:4244", peer_ip);
+        socket.send_to(msg.as_bytes(), addr).ok();
+    }
 }
 
 #[tauri::command]
@@ -230,18 +234,34 @@ fn set_window_focused(focused: bool, state: tauri::State<Arc<AppState>>) {
     *state.window_focused.lock().unwrap() = focused;
 }
 
+#[tauri::command]
+fn notify_offline(state: tauri::State<Arc<AppState>>) {
+    let local_ip = get_local_ip();
+    if let Ok(socket) = UdpSocket::bind(format!("{}:0", local_ip)) {
+        socket.set_broadcast(true).unwrap_or(());
+        let username = state.my_username.lock().unwrap().clone();
+        let msg = format!("AirGap:Bye:{}", username);
+        socket.send_to(msg.as_bytes(), "255.255.255.255:4242").ok();
+    }
+}
+
+// Removed get_broadcast_addrs as binding to the specific interface solves the routing natively.
+
 // ─── UDP broadcast ────────────────────────────────────────────────────────────
 
 fn start_discovery_broadcast(state: Arc<AppState>) {
-    let socket = UdpSocket::bind("0.0.0.0:0").expect("Failed to bind socket");
-    socket.set_broadcast(true).expect("Failed to set broadcast");
-    let broadcast_addr = "255.255.255.255:4242";
-
     loop {
-        let pubkey_b64 = general_purpose::STANDARD.encode(state.my_public_key.as_bytes());
-        let username = state.my_username.lock().unwrap().clone();
-        let message = format!("AirGap:Ping:{}:{}", pubkey_b64, username);
-        socket.send_to(message.as_bytes(), broadcast_addr).ok();
+        let local_ip = get_local_ip();
+        
+        if let Ok(socket) = UdpSocket::bind(format!("{}:0", local_ip)) {
+            socket.set_broadcast(true).unwrap_or(());
+            let pubkey_b64 = general_purpose::STANDARD.encode(state.my_public_key.as_bytes());
+            let username = state.my_username.lock().unwrap().clone();
+            let message = format!("AirGap:Ping:{}:{}", pubkey_b64, username);
+            
+            socket.send_to(message.as_bytes(), "255.255.255.255:4242").ok();
+        }
+        
         thread::sleep(Duration::from_secs(3));
     }
 }
@@ -250,26 +270,29 @@ fn start_discovery_broadcast(state: Arc<AppState>) {
 
 fn start_listener(app_handle: tauri::AppHandle, state: Arc<AppState>) {
     let socket = UdpSocket::bind("0.0.0.0:4242").expect("Failed to bind UDP");
-    socket.set_broadcast(true).expect("Failed to set broadcast"); // ← INDISPENSABLE pour recevoir les broadcasts
+    socket.set_broadcast(true).expect("Failed to set broadcast");
     let mut buf = [0; 4096];
-
+ 
+    println!("Listener UDP démarré sur 0.0.0.0:4242");
+ 
     loop {
         match socket.recv_from(&mut buf) {
             Ok((amt, src)) => {
                 let received = String::from_utf8_lossy(&buf[..amt]);
                 println!("UDP reçu de {}: {}", src, received);
-
+ 
+                // Ignore les paquets non AirGap
                 if !received.starts_with("AirGap:Ping:") {
                     continue;
                 }
-
+ 
                 let parts: Vec<&str> = received.splitn(4, ':').collect();
                 println!("Parts: {:?} (len={})", parts, parts.len());
-
+ 
                 if parts.len() < 3 {
                     continue;
                 }
-
+ 
                 // trim() essentiel — évite les \n ou espaces parasites
                 let pubkey_b64 = parts[2].trim();
                 let peer_username = if parts.len() == 4 {
@@ -277,9 +300,9 @@ fn start_listener(app_handle: tauri::AppHandle, state: Arc<AppState>) {
                 } else {
                     "Anonyme".to_string()
                 };
-
+ 
                 println!("Pubkey b64: {}", pubkey_b64);
-
+ 
                 // Décode la clé publique
                 let pubkey_bytes = match general_purpose::STANDARD.decode(pubkey_b64) {
                     Ok(bytes) => bytes,
@@ -288,41 +311,41 @@ fn start_listener(app_handle: tauri::AppHandle, state: Arc<AppState>) {
                         continue;
                     }
                 };
-
+ 
                 println!("Pubkey décodée: {} bytes", pubkey_bytes.len());
-
+ 
                 if pubkey_bytes.len() != 32 {
+                    println!("Taille de clé invalide: {} bytes", pubkey_bytes.len());
                     continue;
                 }
-
+ 
                 let pubkey_array: [u8; 32] = pubkey_bytes.try_into().unwrap();
                 let their_public = PublicKey::from(pubkey_array);
-
-                // Ignore notre propre broadcast
+ 
+                // ── Ignore notre propre broadcast (par clé publique) ──────────
                 if their_public == state.my_public_key {
                     println!("C'est notre propre clé — ignoré");
                     continue;
                 }
-
+ 
                 let peer_ip = src.ip().to_string();
-
+                println!("Pair détecté: {} ({})", peer_username, peer_ip);
+ 
+                // ── Ignore notre propre IP (double sécurité) ─────────────────
                 let my_ip = get_local_ip();
                 if peer_ip == my_ip {
-                    println!("Paquet de notre propre IP — ignoré");
+                    println!("C'est notre propre IP — ignoré");
                     continue;
                 }
-                println!("Nouveau pair détecté: {}", peer_ip);
-
-                // Vérifie conflit username — lock séparé libéré avant la suite
-                let username_taken = {
-                    let peers = state.known_peers.lock().unwrap();
-                    peers.iter().any(|p| {
-                        p.username == peer_username && p.ip != peer_ip
-                    })
-                };
-
-                if username_taken {
-                    println!("Conflit username: {} ({})", peer_username, peer_ip);
+ 
+                // ── Conflit avec notre propre username ────────────────────────
+                let my_username = state.my_username.lock().unwrap().clone();
+ 
+                if !my_username.is_empty() && peer_username == my_username {
+                    println!(
+                        "Conflit username avec nous-mêmes: {} vs {} ({})",
+                        my_username, peer_username, peer_ip
+                    );
                     app_handle.emit(
                         "username-conflict",
                         serde_json::json!({
@@ -332,14 +355,38 @@ fn start_listener(app_handle: tauri::AppHandle, state: Arc<AppState>) {
                     ).unwrap();
                     continue;
                 }
-
-                // Met à jour known_peers
+ 
+                // ── Conflit entre pairs connus ────────────────────────────────
+                let username_taken = {
+                    let peers = state.known_peers.lock().unwrap();
+                    peers.iter().any(|p| {
+                        p.username == peer_username && p.ip != peer_ip
+                    })
+                };
+ 
+                if username_taken {
+                    println!(
+                        "Conflit username entre pairs: {} ({})",
+                        peer_username, peer_ip
+                    );
+                    app_handle.emit(
+                        "username-conflict",
+                        serde_json::json!({
+                            "ip": peer_ip,
+                            "name": peer_username
+                        }).to_string(),
+                    ).unwrap();
+                    continue;
+                }
+ 
+                // ── Met à jour known_peers ────────────────────────────────────
                 {
                     let mut peers = state.known_peers.lock().unwrap();
                     if let Some(peer) = peers.iter_mut().find(|p| p.ip == peer_ip) {
                         peer.public_key = their_public;
                         peer.username = peer_username.clone();
                         peer.last_seen = Instant::now();
+                        println!("Pair mis à jour: {} ({})", peer_username, peer_ip);
                     } else {
                         peers.push(PeerInfo {
                             ip: peer_ip.clone(),
@@ -347,17 +394,18 @@ fn start_listener(app_handle: tauri::AppHandle, state: Arc<AppState>) {
                             username: peer_username.clone(),
                             last_seen: Instant::now(),
                         });
+                        println!("Nouveau pair ajouté: {} ({})", peer_username, peer_ip);
                     }
                 }
-
-                // Notifie le frontend
+ 
+                // ── Notifie le frontend ───────────────────────────────────────
                 let payload = serde_json::json!({
                     "ip": peer_ip,
                     "name": peer_username
                 });
                 app_handle.emit("peer-found", payload.to_string()).unwrap();
-
-                // Sauvegarde en DB
+ 
+                // ── Sauvegarde en DB ──────────────────────────────────────────
                 {
                     let db = state.db.lock().unwrap();
                     save_peer(&db, &peer_ip, &peer_username).ok();
@@ -440,14 +488,19 @@ fn handle_tcp_connection(stream: TcpStream, app_handle: tauri::AppHandle, state:
 
                             let is_focused = *state.window_focused.lock().unwrap();
                             if !is_focused {
-                                app_handle
-                                    .notification()
-                                    .builder()
-                                    .title(&peer_username)
-                                    .body(&content)
-                                    .show()
-                                    .ok();
-                            }
+    println!("Envoi notification pour: {}", peer_username);
+    let result = app_handle
+        .notification()
+        .builder()
+        .title(&peer_username)
+        .body(&content)
+        .show();
+    
+    match result {
+        Ok(_) => println!("Notification envoyée ✅"),
+        Err(e) => println!("Erreur notification: {}", e),
+    }
+}
 
                             if let Ok(mut ack_stream) = TcpStream::connect(
                                 format!("{}:4243", sender_addr)
@@ -481,6 +534,11 @@ fn send_message(
 ) -> Result<(), String> {
     let peer_pubkey = {
         let peers = state.known_peers.lock().unwrap();
+        println!("known_peers contient {} pairs", peers.len());
+
+        for p in peers.iter() {
+            println!("  - {} ({})", p.username, p.ip); // ← log
+        }
         peers.iter().find(|p| p.ip == peer_ip)
             .map(|p| p.public_key.clone())
             .ok_or("Destinataire inconnu".to_string())?

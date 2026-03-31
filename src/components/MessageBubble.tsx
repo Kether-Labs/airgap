@@ -1,20 +1,17 @@
 import React from "react";
+import { MessageType } from "../App";
 
 
-export interface MessageType {
-    id: string;
-    sender: string;
-    text: string;
-    time: string;
-}
+
 
 interface MessageBubbleProps {
     message: MessageType;
     onDelete?: () => void;
     onImageClick?: (url: string) => void;
+    onRetry: (message: MessageType) => void;
 }
 
-const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete, onImageClick }) => {
+const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete, onImageClick, onRetry }) => {
     const isMe = message.sender === "Moi";
 
     // WhatsApp Colors
@@ -65,6 +62,20 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete, onImag
                         <span className="break-words block mb-1 pr-10">{message.text}</span>
 
                     </>
+                )}
+
+                {message.sender === "Moi" && message.status === "failed" && (
+                    <div className="flex items-center gap-2 mt-1">
+                        <span className="text-red-400 text-[11px]">
+                            Échec d'envoi
+                        </span>
+                        <button
+                            onClick={() => onRetry(message)} // ← nouveau callback
+                            className="text-[11px] text-[#00a884] hover:underline"
+                        >
+                            Réessayer
+                        </button>
+                    </div>
                 )}
 
                 <div className={`flex items-center justify-end gap-1.5 mt-0.5 ${isImage ? 'absolute bottom-2 right-3 px-2 py-0.5 bg-black/40 backdrop-blur-sm rounded-full text-white' : 'absolute bottom-1 right-2'}`}>

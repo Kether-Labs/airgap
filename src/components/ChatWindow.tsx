@@ -1,13 +1,15 @@
 import React, { useEffect, useRef, useState } from "react";
 import MessageBubble from "./MessageBubble";
-import { MessageType } from "./MessageBubble";
+
 import ImageModal from "./ImageModal";
+import { MessageType } from "../App";
 
 interface ChatWindowProps {
     selectedPeerIp: string;
     selectedPeerName: string;
     messages: MessageType[];
     onDeleteMessage: (id: string) => void;
+    onRetryMessage: (message: MessageType) => void;
     isTyping?: boolean; // ← reçu depuis App.tsx
 }
 
@@ -61,6 +63,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     selectedPeerName,
     messages,
     onDeleteMessage,
+    onRetryMessage,
     isTyping = false,
 }) => {
     const endOfMessagesRef = useRef<HTMLDivElement>(null);
@@ -131,6 +134,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                             {messages.map((msg, idx) => (
                                 <MessageBubble
                                     key={msg.id || idx}
+                                    onRetry={() => onRetryMessage(msg)}
                                     message={msg}
                                     onDelete={() => onDeleteMessage(msg.id)}
                                     onImageClick={(url) => setPreviewImageUrl(url)}
