@@ -8,8 +8,9 @@
   "permissions": [
     "core:default",
     "notification:default",
-    "notification:allow-is-permission-granted",
+    "notification:allow-notify",
     "notification:allow-request-permission",
-    "notification:allow-notify"
+    "notification:allow-is-permission-granted",
+    "opener:default"
   ]
 }

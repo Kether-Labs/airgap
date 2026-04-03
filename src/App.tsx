@@ -229,7 +229,7 @@ function App() {
       .catch(console.error);
 
     // Permission notification Web
-    requestWebNotificationPermission();
+    //requestWebNotificationPermission();
   }, []);
 
   useEffect(() => {
@@ -382,16 +382,16 @@ function App() {
           playNotificationSound();
 
           // Notification Web (visible même si app au premier plan)
-          showWebNotification(msg.sender_name, msg.content);
+          // showWebNotification(msg.sender_name, msg.content);
 
           // Notification Toast "Telegram Style"
-          const newToastData: AppToast = {
-            id: msg.message_id || Date.now().toString(),
-            peerIp: senderIp,
-            name: msg.sender_name,
-            content: msg.content,
-          };
-          setToasts((prev) => [...prev, newToastData]);
+          //const newToastData: AppToast = {
+          //id: msg.message_id || Date.now().toString(),
+          //peerIp: senderIp,
+          //name: msg.sender_name,
+          //content: msg.content,
+          //};
+          //setToasts((prev) => [...prev, newToastData]);
         }
       });
       return unlisten;
@@ -451,8 +451,10 @@ function App() {
       setSelectedPeer(peerIp);
       selectedPeerRef.current = peerIp;
 
+      // ← Informe Rust de la conversation active
+      invoke("set_active_peer", { peerIp: peerIp ?? "" }).catch(() => { });
+
       if (peerIp) {
-        // Remet à zéro les non-lus
         setUnreadCounts((prev) => ({ ...prev, [peerIp]: 0 }));
         if (username) loadHistoryForPeer(peerIp, username);
       }
@@ -653,7 +655,7 @@ function App() {
           </div>
         </div>
       )}
-      
+
       {/* Toast Notifications Container (Telegram style) */}
       <div className="fixed top-4 right-4 z-[9999] pointer-events-none space-y-2 w-80">
         {toasts.map((toast) => (
@@ -672,7 +674,7 @@ function App() {
           </div>
         ))}
 
-        
+
       </div>
 
       {/* Global Scrollbar Style */}

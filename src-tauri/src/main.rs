@@ -8,6 +8,9 @@ mod db;
 use db::{init_db, save_message, load_history, save_peer, load_peers, DbMessage};
 use rusqlite::Connection;
 
+mod notification;
+use notification::{show_custom_notification, focus_main_window};
+
 use std::fs;
 use std::path::PathBuf;
 use tauri::Emitter;
@@ -37,6 +40,7 @@ struct AppState {
     db: Mutex<Connection>,
     db_key: [u8; 32],
     window_focused: Mutex<bool>,
+    active_peer_ip: Mutex<String>
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -104,6 +108,7 @@ fn main() {
         db: Mutex::new(conn),
         db_key,
         window_focused: Mutex::new(true),
+        active_peer_ip: Mutex::new(String::new())
     });
 
     tauri::Builder::default()
@@ -118,7 +123,9 @@ fn main() {
             set_window_focused,
             get_saved_peers,
             get_my_ip,
-            notify_offline
+            notify_offline,
+            focus_main_window,
+            set_active_peer
         ])
         .setup(move |app| {
             let app_handle = app.handle();
@@ -185,6 +192,11 @@ fn main() {
 #[tauri::command]
 fn get_username(state: tauri::State<Arc<AppState>>) -> String {
     state.my_username.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn set_active_peer(peer_ip: String, state: tauri::State<Arc<AppState>>) {
+    *state.active_peer_ip.lock().unwrap() = peer_ip;
 }
 
 #[tauri::command]
@@ -440,7 +452,14 @@ fn start_tcp_server(app_handle: tauri::AppHandle, state: Arc<AppState>) {
 }
 
 fn handle_tcp_connection(stream: TcpStream, app_handle: tauri::AppHandle, state: Arc<AppState>) {
-    let sender_addr = stream.peer_addr().unwrap().ip().to_string();
+    let sender_addr = match stream.peer_addr() {
+    Ok(addr) => addr.ip().to_string(),
+    Err(e) => {
+        println!("Impossible de récupérer l'adresse du pair: {}", e);
+        return;
+    }
+};
+
     let mut reader = BufReader::new(&stream);
     let mut line = String::new();
 
@@ -473,34 +492,41 @@ fn handle_tcp_connection(stream: TcpStream, app_handle: tauri::AppHandle, state:
                         if let Ok(decrypted) = cipher.decrypt(nonce, ciphertext.as_slice()) {
                             let content = String::from_utf8_lossy(&decrypted).to_string();
 
+                            // Sauvegarde DB
                             {
                                 let db = state.db.lock().unwrap();
                                 save_message(&db, &sender_addr, &peer_username, &content, &state.db_key).ok();
                             }
 
+                            // Notifie le frontend — UNE SEULE FOIS ✅
                             let msg = ChatMessage {
                                 sender_ip:   sender_addr.clone(),
                                 sender_name: peer_username.clone(),
                                 content:     content.clone(),
                                 msg_id:      msg_id.to_string(),
                             };
-                            app_handle.emit("message-received", msg.clone()).unwrap();
+                            app_handle.emit("message-received", msg).unwrap();
 
+                            // Notification custom — seulement si fenêtre pas active ✅
                             let is_focused = *state.window_focused.lock().unwrap();
-                            if !is_focused {
-                            println!("Fenêtre non focused → envoi notification");
-                            use tauri_plugin_notification::NotificationExt;
-                            match app_handle
-                                .notification()
-                                .builder()
-                                .title(&peer_username)
-                                .body(&content)
-                                .show() {
-                                Ok(_) => println!("Notification envoyée ✅"),
-                                Err(e) => println!("Erreur notification: {:?}", e),
-                            }
-                        }
+                            let active_peer = state.active_peer_ip.lock().unwrap().clone();
+                            let is_active_conversation = active_peer == sender_addr;
 
+                            let should_notify = !is_focused || !is_active_conversation;
+                            if should_notify {
+                                    println!(
+                                    "Notification → focused:{} active_conv:{} sender:{}",
+                                    is_focused, is_active_conversation, sender_addr
+                                );
+                                notification::show_custom_notification(
+                                    &app_handle,
+                                    &peer_username,
+                                    &content,
+                                    &sender_addr,
+                                );
+                            }
+
+                            // ACK — toujours envoyé ✅
                             if let Ok(mut ack_stream) = TcpStream::connect(
                                 format!("{}:4243", sender_addr)
                             ) {
