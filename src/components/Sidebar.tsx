@@ -6,10 +6,11 @@ interface PeerItemProps {
     isOnline: boolean;
     isSelected: boolean;
     hasConflict: boolean;
+    unreadCount: number;
     onClick: () => void;
 }
 
-const PeerItem: React.FC<PeerItemProps> = ({ peer, isOnline, isSelected, hasConflict, onClick }) => {
+const PeerItem: React.FC<PeerItemProps> = ({ peer, isOnline, isSelected, hasConflict, unreadCount, onClick }) => {
     return (
         <div
             onClick={onClick}
@@ -46,6 +47,11 @@ const PeerItem: React.FC<PeerItemProps> = ({ peer, isOnline, isSelected, hasConf
                         {peer.name}
                     </span>
                     {hasConflict && <span className="text-amber-400 text-[9px] font-black uppercase tracking-tighter ml-1">Conflit</span>}
+                    {unreadCount > 0 && (
+                        <div className="w-5 h-5 bg-[#00a884] rounded-full flex items-center justify-center text-[11px] font-bold text-[#111b21] flex-shrink-0">
+                            {unreadCount > 9 ? "9+" : unreadCount}
+                        </div>
+                    )}
                 </div>
                 <div className="flex items-center gap-2">
                     <div className={`w-1.5 h-1.5 rounded-full ${isSelected && isOnline ? 'bg-[#00a884] animate-pulse' : 'bg-[#46535d]'}`}></div>
@@ -64,9 +70,10 @@ interface SidebarProps {
     onUpdateUsername: (name: string) => void;
     conflictPeers: Record<string, string>;
     activePeerIps: string[];
+    unreadCounts: Record<string, number>;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ peers, selectedPeer, setSelectedPeer, username, onUpdateUsername, conflictPeers, activePeerIps }) => {
+const Sidebar: React.FC<SidebarProps> = ({ peers, selectedPeer, setSelectedPeer, username, onUpdateUsername, conflictPeers, activePeerIps, unreadCounts }) => {
     const [isEditingName, setIsEditingName] = useState(false);
     const [tempName, setTempName] = useState(username);
 
@@ -99,6 +106,7 @@ const Sidebar: React.FC<SidebarProps> = ({ peers, selectedPeer, setSelectedPeer,
                     <svg viewBox="0 0 24 24" height="22" width="22" fill="currentColor"><path d="M12 7a2 2 0 1 0-.001-4.001A2 2 0 0 0 12 7zm0 2a2 2 0 1 0-.001 3.999A2 2 0 0 0 12 9zm0 6a2 2 0 1 0-.001 3.999A2 2 0 0 0 12 15z"></path></svg>
                 </div>
             </div>
+
 
             {/* MON PROFIL - Refined & Unique */}
             <div className="px-6 py-8 relative z-10">
@@ -186,6 +194,7 @@ const Sidebar: React.FC<SidebarProps> = ({ peers, selectedPeer, setSelectedPeer,
                                     {onlinePeers.map((peer) => (
                                         <PeerItem
                                             key={peer.ip}
+                                            unreadCount={unreadCounts[peer.ip] || 0}
                                             peer={peer}
                                             isOnline={true}
                                             isSelected={selectedPeer === peer.ip}
@@ -206,6 +215,7 @@ const Sidebar: React.FC<SidebarProps> = ({ peers, selectedPeer, setSelectedPeer,
                                         <PeerItem
                                             key={peer.ip}
                                             peer={peer}
+                                            unreadCount={unreadCounts[peer.ip] || 0}
                                             isOnline={false}
                                             isSelected={selectedPeer === peer.ip}
                                             hasConflict={!!conflictPeers[peer.ip]}

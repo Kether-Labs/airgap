@@ -484,23 +484,22 @@ fn handle_tcp_connection(stream: TcpStream, app_handle: tauri::AppHandle, state:
                                 content:     content.clone(),
                                 msg_id:      msg_id.to_string(),
                             };
-                            app_handle.emit("message-received", msg).unwrap();
+                            app_handle.emit("message-received", msg.clone()).unwrap();
 
                             let is_focused = *state.window_focused.lock().unwrap();
                             if !is_focused {
-    println!("Envoi notification pour: {}", peer_username);
-    let result = app_handle
-        .notification()
-        .builder()
-        .title(&peer_username)
-        .body(&content)
-        .show();
-    
-    match result {
-        Ok(_) => println!("Notification envoyée ✅"),
-        Err(e) => println!("Erreur notification: {}", e),
-    }
-}
+                            println!("Fenêtre non focused → envoi notification");
+                            use tauri_plugin_notification::NotificationExt;
+                            match app_handle
+                                .notification()
+                                .builder()
+                                .title(&peer_username)
+                                .body(&content)
+                                .show() {
+                                Ok(_) => println!("Notification envoyée ✅"),
+                                Err(e) => println!("Erreur notification: {:?}", e),
+                            }
+                        }
 
                             if let Ok(mut ack_stream) = TcpStream::connect(
                                 format!("{}:4243", sender_addr)

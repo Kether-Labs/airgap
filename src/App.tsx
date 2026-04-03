@@ -9,11 +9,20 @@ import Sidebar from "./components/Sidebar";
 import ChatWindow from "./components/ChatWindow";
 import MessageInput from "./components/MessageInput";
 import LoginScreen from "./components/LoginScreen";
+import NotificationToast from "./components/NotificationToast";
+
+interface AppToast {
+  id: string;
+  peerIp: string;
+  name: string;
+  content: string;
+}
 
 interface ChatMessage {
   sender_ip: string;
   sender_name: string;
   content: string;
+  message_id: string;
 }
 
 // Structure renvoyée par la commande Rust get_history
@@ -45,13 +54,55 @@ function dbMessageToMessageType(msg: DbMessage, myUsername: string): MessageType
   };
 }
 
+async function requestWebNotificationPermission() {
+  if ("Notification" in window && Notification.permission === "default") {
+    await Notification.requestPermission();
+    console.log("Permission notification:", Notification.permission);
+  }
+}
+
+// Son de notification via Web Audio API — aucun fichier audio nécessaire
+function playNotificationSound() {
+  try {
+    const ctx = new AudioContext();
+    const oscillator = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+
+    oscillator.connect(gainNode);
+    gainNode.connect(ctx.destination);
+
+    // Deux notes courtes — style notification moderne
+    oscillator.frequency.setValueAtTime(880, ctx.currentTime);
+    oscillator.frequency.setValueAtTime(660, ctx.currentTime + 0.12);
+
+    gainNode.gain.setValueAtTime(0.25, ctx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+
+    oscillator.start(ctx.currentTime);
+    oscillator.stop(ctx.currentTime + 0.35);
+  } catch (e) {
+    console.log("Son non disponible:", e);
+  }
+}
+
+// Affiche une notification Web (dans le navigateur/WebView)
+function showWebNotification(title: string, body: string) {
+  if ("Notification" in window && Notification.permission === "granted") {
+    new Notification(title, {
+      body,
+      icon: "/icon.png",
+      silent: true, // on gère le son nous-mêmes
+    });
+  }
+}
+
 function App() {
   const [peers, setPeers] = useState<Peer[]>([]);
   const [selectedPeer, setSelectedPeer] = useState<string | null>(null);
 
   const [activePeerIps, setActivePeerIps] = useState<string[]>([]);
   const [conflictPeers, setConflictPeers] = useState<Record<string, string>>({});
-
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [username, setUsername] = useState<string | null>(null);
   const [isSystemReady, setIsSystemReady] = useState<boolean>(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState<boolean>(false);
@@ -61,7 +112,14 @@ function App() {
   const [usernameConflictAlert, setUsernameConflictAlert] = useState(false);
   const [isCheckingUsername, setIsCheckingUsername] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<AppToast[]>([]);
   const pendingUsername = useRef<string | null>(null);
+  const selectedPeerRef = useRef<string | null>(null);
+
+
+  useEffect(() => {
+    selectedPeerRef.current = selectedPeer;
+  }, [selectedPeer]);
 
   const handleRetryMessage = async (msg: MessageType) => {
     if (!selectedPeer) return;
@@ -96,6 +154,14 @@ function App() {
       }));
     }
   };
+
+  useEffect(() => {
+    const appWindow = getCurrentWindow();
+    const unlisten = appWindow.onFocusChanged(({ payload: focused }) => {
+      invoke("set_window_focused", { focused }).catch(() => { });
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, []);
   useEffect(() => {
     const setup = async () => {
       const unlisten = await listen<string>("username-conflict", (event) => {
@@ -149,19 +215,21 @@ function App() {
   }, []);
   // 1. Initialisation (get username)
   useEffect(() => {
+    // Username
     invoke<string>("get_username")
       .then((name) => {
         setUsername(name);
         setIsSystemReady(true);
       })
-      .catch((e) => {
-        console.error("Erreur get_username", e);
-        setIsSystemReady(true);
-      });
+      .catch(() => setIsSystemReady(true));
 
+    // IP locale
     invoke<string>("get_my_ip")
       .then((ip) => setMyIp(ip))
       .catch(console.error);
+
+    // Permission notification Web
+    requestWebNotificationPermission();
   }, []);
 
   useEffect(() => {
@@ -254,13 +322,33 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const setup = async () => {
+      const unlisten = await listen<string>("message-ack", (event) => {
+        const ackedId = event.payload;
+        setConversations((prev) => {
+          const updated = { ...prev };
+          for (const ip in updated) {
+            updated[ip] = updated[ip].map((m) =>
+              m.id === ackedId ? { ...m, status: "delivered" } : m
+            );
+          }
+          return updated;
+        });
+      });
+      return unlisten;
+    };
+    const p = setup();
+    return () => { p.then((fn) => fn && fn()); };
+  }, []);
   // 3. Listener Messages TCP entrants
   useEffect(() => {
-    const setupListener = async () => {
+    const setup = async () => {
       const unlisten = await listen<ChatMessage>("message-received", (event) => {
         const msg = event.payload;
         const senderIp = msg.sender_ip;
 
+        // Ajoute le message dans la conversation
         setConversations((prev) => {
           const existing = prev[senderIp] || [];
           return {
@@ -268,7 +356,7 @@ function App() {
             [senderIp]: [
               ...existing,
               {
-                id: crypto.randomUUID(),
+                id: msg.message_id,
                 sender: msg.sender_name,
                 text: msg.content,
                 time: new Date().toLocaleTimeString([], {
@@ -279,14 +367,37 @@ function App() {
             ],
           };
         });
+
+        // Notification si la conversation n'est pas active
+        const isConversationActive = selectedPeerRef.current === senderIp;
+
+        if (!isConversationActive) {
+          // Incrémente le badge non-lu
+          setUnreadCounts((prev) => ({
+            ...prev,
+            [senderIp]: (prev[senderIp] || 0) + 1,
+          }));
+
+          // Son de notification
+          playNotificationSound();
+
+          // Notification Web (visible même si app au premier plan)
+          showWebNotification(msg.sender_name, msg.content);
+
+          // Notification Toast "Telegram Style"
+          const newToastData: AppToast = {
+            id: msg.message_id || Date.now().toString(),
+            peerIp: senderIp,
+            name: msg.sender_name,
+            content: msg.content,
+          };
+          setToasts((prev) => [...prev, newToastData]);
+        }
       });
       return unlisten;
     };
-
-    const unlistenPromise = setupListener();
-    return () => {
-      unlistenPromise.then((fn) => fn && fn());
-    };
+    const p = setup();
+    return () => { p.then((fn) => fn && fn()); };
   }, []);
 
   // Charge l'historique SQLite d'un pair (appelé une seule fois par pair sélectionné)
@@ -338,13 +449,16 @@ function App() {
   const handleSelectPeer = useCallback(
     (peerIp: string | null) => {
       setSelectedPeer(peerIp);
-      if (peerIp && username) {
-        loadHistoryForPeer(peerIp, username);
+      selectedPeerRef.current = peerIp;
+
+      if (peerIp) {
+        // Remet à zéro les non-lus
+        setUnreadCounts((prev) => ({ ...prev, [peerIp]: 0 }));
+        if (username) loadHistoryForPeer(peerIp, username);
       }
     },
     [username, loadHistoryForPeer]
   );
-
   // Actions
   const handleLogin = async (name: string) => {
     setLoginError(null);
@@ -472,7 +586,9 @@ function App() {
         username={username}
         onUpdateUsername={handleUpdateUsername}
         activePeerIps={activePeerIps}
+        unreadCounts={unreadCounts}
       />
+
 
       {selectedPeer ? (
         <div className="flex-1 flex flex-col relative">
@@ -537,6 +653,27 @@ function App() {
           </div>
         </div>
       )}
+      
+      {/* Toast Notifications Container (Telegram style) */}
+      <div className="fixed top-4 right-4 z-[9999] pointer-events-none space-y-2 w-80">
+        {toasts.map((toast) => (
+          <div key={toast.id} className="pointer-events-auto">
+            <NotificationToast
+              id={toast.id}
+              peerIp={toast.peerIp}
+              name={toast.name}
+              content={toast.content}
+              onClose={(id) => setToasts((prev) => prev.filter((t) => t.id !== id))}
+              onClick={(ip) => {
+                setToasts((prev) => prev.filter((t) => t.peerIp !== ip));
+                handleSelectPeer(ip);
+              }}
+            />
+          </div>
+        ))}
+
+        
+      </div>
 
       {/* Global Scrollbar Style */}
       <style>{`
