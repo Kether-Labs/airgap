@@ -3,13 +3,12 @@ use std::thread;
 use std::time::Duration;
 use std::io::{Write, BufReader, BufRead};
 use std::sync::{Arc, Mutex};
-use tauri_plugin_notification::NotificationExt;
 mod db;
 use db::{init_db, save_message, load_history, save_peer, load_peers, DbMessage};
 use rusqlite::Connection;
 
 mod notification;
-use notification::{show_custom_notification, focus_main_window};
+use notification::focus_main_window;
 
 use std::fs;
 use std::path::PathBuf;
