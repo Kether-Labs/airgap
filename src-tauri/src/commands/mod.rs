@@ -1,8 +1,12 @@
-mod message;
-mod user;
-mod history;
-mod window;
-mod network;
+pub mod message;
+pub mod media;
+pub mod file;
+pub use file::{load_and_compress_image, encode_image_to_base64, decode_base64_to_image};
+pub mod user;
+pub mod history;
+pub mod window;
+pub mod network;
+pub use media::send_media;
 
 pub use message::send_message;
 pub use user::{get_username, set_username};

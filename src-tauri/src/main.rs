@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
+use rand::random;
 use tauri::Emitter;
 
 mod state;
@@ -59,6 +60,27 @@ use state::AppState;
     commands::set_active_peer(peer_ip, state)
 }
 
+#[tauri::command] fn send_media(
+    peer_ip: String,
+    file_path: String,
+    state: tauri::State<Arc<AppState>>,
+) -> Result<String, String> {
+    let (full_data, thumb_data, media_type) = commands::load_and_compress_image(&file_path, 1280, 80)?;
+    let msg_id = format!("{:032x}", rand::random::<u128>());
+    
+    commands::send_media(
+        peer_ip,
+        full_data,
+        media_type,
+        msg_id.clone(),
+        Some(thumb_data),
+        None,
+        state
+    )?;
+    
+    Ok(msg_id)
+}
+
 fn main() {
     let state = match AppState::new() {
         Ok(s) => Arc::new(s),
@@ -66,10 +88,13 @@ fn main() {
     };
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())
         .manage(state.clone())
         .invoke_handler(tauri::generate_handler![
             send_message,
+            send_media,
             get_username,
             set_username,
             get_history,

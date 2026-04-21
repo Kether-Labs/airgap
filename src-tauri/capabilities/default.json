@@ -12,6 +12,10 @@
     "notification:allow-request-permission",
     "notification:allow-is-permission-granted",
     "core:webview:allow-create-webview-window",
-    "opener:default"
+    "opener:default",
+    "dialog:default",
+    "dialog:allow-open",
+    "fs:default",
+    "fs:allow-read"
   ]
 }

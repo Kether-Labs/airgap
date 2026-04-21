@@ -35,6 +35,9 @@ dirs = "5.0"
 rusqlite = { version = "0.31", features = ["bundled"] }
 sha2 = "0.10"
 tauri-plugin-notification = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
 
 urlencoding = "2"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 

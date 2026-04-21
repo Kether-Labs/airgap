@@ -112,6 +112,65 @@ fn handle_tcp_connection(
                 let _ = app_handle.emit("message-ack", msg_id);
             }
 
+            "MEDIA" if parts.len() >= 5 => {
+                let msg_id = parts[1];
+                let media_type = parts[2];
+                let cipher_b64 = parts[3];
+                let nonce_b64 = parts[4];
+                let thumb_b64 = if parts.len() > 5 { parts[5] } else { "" };
+
+                let peer_data = {
+                    let peers = state.known_peers.lock().unwrap();
+                    peers.iter().find(|p| p.ip == sender_addr).map(|peer| {
+                        (peer.public_key.clone(), peer.username.clone())
+                    })
+                };
+
+                if let Some((peer_pubkey, peer_username)) = peer_data {
+                    let shared_secret = state.my_secret.diffie_hellman(&peer_pubkey);
+                    let cipher = Aes256Gcm::new_from_slice(shared_secret.as_bytes()).unwrap();
+
+                    let ciphertext = general_purpose::STANDARD.decode(cipher_b64).unwrap_or_default();
+                    let nonce_bytes = general_purpose::STANDARD.decode(nonce_b64).unwrap_or_default();
+
+                    if nonce_bytes.len() == 12 {
+                        let nonce = Nonce::from_slice(&nonce_bytes);
+                        if let Ok(image_data) = cipher.decrypt(nonce, ciphertext.as_ref()) {
+                            let thumbnail = if !thumb_b64.is_empty() {
+                                general_purpose::STANDARD.decode(thumb_b64).ok()
+                            } else {
+                                None
+                            };
+
+                            let media_content = format!("[{}]", media_type);
+
+                            {
+                                let db = state.db.lock().unwrap();
+                                db::save_message(&db, &sender_addr, &peer_username, &media_content, &state.db_key).ok();
+                            }
+
+                            let msg = ChatMessage {
+                                sender_ip: sender_addr.clone(),
+                                sender_name: peer_username.clone(),
+                                content: media_content,
+                                msg_id: msg_id.to_string(),
+                            };
+                            let _ = app_handle.emit("media-received", serde_json::json!({
+                                "message": msg,
+                                "data": general_purpose::STANDARD.encode(&image_data),
+                                "media_type": media_type,
+                                "thumbnail": thumbnail.map(|t| general_purpose::STANDARD.encode(t))
+                            }));
+
+                            if let Ok(mut ack_stream) = TcpStream::connect(format!("{}:4243", sender_addr)) {
+                                let ack = format!("ACK:{}\n", msg_id);
+                                ack_stream.write_all(ack.as_bytes()).ok();
+                            }
+                        }
+                    }
+                }
+            }
+
             _ => println!("Format inconnu: {}", line),
         }
     }

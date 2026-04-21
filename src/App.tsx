@@ -41,6 +41,9 @@ export interface MessageType {
   sender: string;
   text: string;
   time: string;
+  mediaType?: "image" | "video" | "audio";
+  mediaData?: string;
+  thumbnail?: string;
   status?: "sending" | "sent" | "delivered" | "failed";
 }
 
@@ -52,13 +55,6 @@ function dbMessageToMessageType(msg: DbMessage, myUsername: string): MessageType
     text: msg.content,
     time: "", // L'historique DB n'a pas de timestamp formaté pour l'instant
   };
-}
-
-async function requestWebNotificationPermission() {
-  if ("Notification" in window && Notification.permission === "default") {
-    await Notification.requestPermission();
-    console.log("Permission notification:", Notification.permission);
-  }
 }
 
 // Son de notification via Web Audio API — aucun fichier audio nécessaire
@@ -82,17 +78,6 @@ function playNotificationSound() {
     oscillator.stop(ctx.currentTime + 0.35);
   } catch (e) {
     console.log("Son non disponible:", e);
-  }
-}
-
-// Affiche une notification Web (dans le navigateur/WebView)
-function showWebNotification(title: string, body: string) {
-  if ("Notification" in window && Notification.permission === "granted") {
-    new Notification(title, {
-      body,
-      icon: "/icon.png",
-      silent: true, // on gère le son nous-mêmes
-    });
   }
 }
 
@@ -344,6 +329,52 @@ function App() {
   // 3. Listener Messages TCP entrants
   useEffect(() => {
     const setup = async () => {
+      const unlisten = await listen<any>("media-received", (event) => {
+        const data = event.payload;
+        const msg = data.message;
+        const senderIp = msg.sender_ip;
+
+        setConversations((prev) => {
+          const existing = prev[senderIp] || [];
+          return {
+            ...prev,
+            [senderIp]: [
+              ...existing,
+              {
+                id: msg.message_id,
+                sender: msg.sender_name,
+                text: "[Image]",
+                time: new Date().toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                }),
+                mediaType: "image",
+                mediaData: data.data,
+                thumbnail: data.thumbnail,
+              },
+            ],
+          };
+        });
+
+        const isConversationActive = selectedPeerRef.current === senderIp;
+        if (!isConversationActive) {
+          setUnreadCounts((prev) => ({
+            ...prev,
+            [senderIp]: (prev[senderIp] || 0) + 1,
+          }));
+          playNotificationSound();
+        }
+      });
+
+      return unlisten;
+    };
+    const p = setup();
+    return () => { p.then((fn) => fn && fn()); };
+  }, []);
+
+  // 4. Listener Messages TCP entrants
+  useEffect(() => {
+    const setup = async () => {
       const unlisten = await listen<ChatMessage>("message-received", (event) => {
         const msg = event.payload;
         const senderIp = msg.sender_ip;
@@ -562,6 +593,55 @@ function App() {
     }
   };
 
+  const handleSendMedia = async (media: { path: string; type: string; base64?: string; caption?: string }) => {
+    if (!selectedPeer) return;
+
+    const caption = media.caption || "";
+
+    const msgId = generateUUID();
+    const newMessage: MessageType = {
+      id: msgId,
+      sender: "Moi",
+      text: caption || "[Image]",
+      time: new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+      mediaType: "image",
+      mediaData: media.base64,
+      thumbnail: media.base64,
+      status: "sending",
+    };
+
+    setConversations((prev) => ({
+      ...prev,
+      [selectedPeer]: [...(prev[selectedPeer] || []), newMessage],
+    }));
+
+    try {
+      await invoke("send_media", {
+        peerIp: selectedPeer,
+        filePath: media.path,
+      });
+
+      setConversations((prev) => ({
+        ...prev,
+        [selectedPeer]: (prev[selectedPeer] || []).map((m) =>
+          m.id === msgId ? { ...m, status: "sent" } : m
+        ),
+      }));
+
+    } catch (e) {
+      console.error("Erreur envoi média:", e);
+      setConversations((prev) => ({
+        ...prev,
+        [selectedPeer]: (prev[selectedPeer] || []).map((m) =>
+          m.id === msgId ? { ...m, status: "failed" } : m
+        ),
+      }));
+    }
+  };
+
   // Rendu conditionnel — écran de login si pas de username
   if (username === null || username === "") {
     return <LoginScreen onLogin={handleLogin} usernameConflictAlert={usernameConflictAlert} isSystemReady={isSystemReady} isChecking={isCheckingUsername} // ← nouveau
@@ -610,6 +690,7 @@ function App() {
           />
           <MessageInput
             onSendMessage={handleSendMessage}
+            onSendMedia={handleSendMedia}
             selectedPeer={selectedPeer}
           />
         </div>

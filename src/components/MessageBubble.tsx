@@ -14,12 +14,24 @@ interface MessageBubbleProps {
 const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete, onImageClick, onRetry }) => {
     const isMe = message.sender === "Moi";
 
-    // WhatsApp Colors
     const bubbleColor = isMe ? "bg-[#005c4b]" : "bg-[#202c33]";
     const textColor = "text-[#e9edef]";
     const timeColor = "text-[#8696a0]";
 
-    const isImage = message.text.startsWith("data:image:");
+    const isImage = message.text.startsWith("data:image:") || message.mediaType === "image";
+    const hasMedia = message.mediaType === "image" && (message.mediaData || message.thumbnail);
+    
+    let mediaSrc: string | null = null;
+    if (message.mediaData) {
+        if (message.mediaData.startsWith("data:")) {
+            mediaSrc = message.mediaData;
+        } else {
+            mediaSrc = `data:image/jpeg;base64,${message.mediaData}`;
+        }
+    } else if (message.thumbnail) {
+        const thumb = message.thumbnail.startsWith("data:") ? message.thumbnail : `data:image/jpeg;base64,${message.thumbnail}`;
+        mediaSrc = thumb;
+    }
 
     return (
         <div className={`flex ${isMe ? "justify-end" : "justify-start"} mb-2 animate-in fade-in slide-in-from-bottom-2 duration-300 relative group`}>
@@ -48,7 +60,19 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onDelete, onImag
                     isMe ? { borderTopRightRadius: '4px' } : { borderTopLeftRadius: '4px' }
                 }
             >
-                {isImage ? (
+                {hasMedia && mediaSrc ? (
+                    <div className="p-0.5">
+                        <img
+                            src={mediaSrc}
+                            alt="Shared"
+                            className="rounded-xl max-h-[350px] w-full object-contain cursor-zoom-in shadow-inner transition-opacity hover:opacity-90"
+                            onClick={() => onImageClick && onImageClick(mediaSrc)}
+                        />
+                        {message.text && message.text !== "[Image]" && (
+                            <p className="text-[#d1d7db] text-[14px] mt-1.5 px-1">{message.text}</p>
+                        )}
+                    </div>
+                ) : isImage ? (
                     <div className="p-0.5">
                         <img
                             src={message.text}
