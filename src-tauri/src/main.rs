@@ -66,6 +66,9 @@ use state::AppState;
     state: tauri::State<Arc<AppState>>,
 ) -> Result<String, String> {
     let (full_data, thumb_data, media_type) = commands::load_and_compress_image(&file_path, 1280, 80)?;
+    
+    println!("[MAIN] send_media: file={}, full_data_len={}, thumb_len={}", file_path, full_data.len(), thumb_data.len());
+    
     let msg_id = format!("{:032x}", rand::random::<u128>());
     
     commands::send_media(

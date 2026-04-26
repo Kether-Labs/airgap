@@ -73,7 +73,7 @@ fn handle_tcp_connection(
 
                             {
                                 let db = state.db.lock().unwrap();
-                                db::save_message(&db, &sender_addr, &peer_username, &content, &state.db_key).ok();
+                                db::save_message(&db, &sender_addr, &peer_username, &content, &state.db_key, None, None, None).ok();
                             }
 
                             let msg = ChatMessage {
@@ -142,11 +142,31 @@ fn handle_tcp_connection(
                                 None
                             };
 
-                            let media_content = format!("[{}]", media_type);
+                            // Décoder la caption si présente (champ 6)
+                            let caption = if parts.len() > 6 && !parts[6].is_empty() {
+                                let caption_bytes = general_purpose::STANDARD.decode(parts[6]).ok();
+                                caption_bytes.and_then(|b| String::from_utf8(b).ok())
+                            } else {
+                                None
+                            };
+                            
+                            let media_content = match caption {
+                                Some(ref c) if !c.is_empty() => format!("[{}] {}", media_type, c),
+                                _ => format!("[{}]", media_type),
+                            };
 
                             {
                                 let db = state.db.lock().unwrap();
-                                db::save_message(&db, &sender_addr, &peer_username, &media_content, &state.db_key).ok();
+                                db::save_message(
+                                    &db, 
+                                    &sender_addr, 
+                                    &peer_username, 
+                                    &media_content, 
+                                    &state.db_key, 
+                                    Some(&image_data),
+                                    Some(&media_type),
+                                    thumbnail.as_deref()
+                                ).ok();
                             }
 
                             let msg = ChatMessage {

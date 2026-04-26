@@ -47,7 +47,7 @@ pub fn send_message(
 
     let username = state.my_username.lock().unwrap().clone();
     let db = state.db.lock().unwrap();
-    crate::db::save_message(&db, &peer_ip, &username, &content, &state.db_key).ok();
+    crate::db::save_message(&db, &peer_ip, &username, &content, &state.db_key, None, None, None).ok();
 
     Ok(())
 }

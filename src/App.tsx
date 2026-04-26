@@ -29,6 +29,9 @@ interface ChatMessage {
 interface DbMessage {
   sender_name: string;
   content: string;
+  media_data?: string;
+  media_type?: string;
+  thumbnail?: string;
 }
 
 interface Peer {
@@ -47,13 +50,26 @@ export interface MessageType {
   status?: "sending" | "sent" | "delivered" | "failed";
 }
 
-// Convertit un DbMessage en MessageType (pas de timestamp stocké en lisible → on affiche rien)
+// Convertit un DbMessage en MessageType
 function dbMessageToMessageType(msg: DbMessage, myUsername: string): MessageType {
+  const isMedia = msg.content.startsWith("[image]") || msg.media_type === "image";
+  
+  let mediaData: string | undefined;
+  let thumb: string | undefined;
+  
+  if (isMedia && msg.media_data) {
+    mediaData = msg.media_data;
+    thumb = msg.thumbnail;
+  }
+  
   return {
     id: crypto.randomUUID(),
     sender: msg.sender_name === myUsername ? "Moi" : msg.sender_name,
     text: msg.content,
-    time: "", // L'historique DB n'a pas de timestamp formaté pour l'instant
+    time: "",
+    mediaType: isMedia ? "image" : undefined,
+    mediaData,
+    thumbnail: thumb,
   };
 }
 
