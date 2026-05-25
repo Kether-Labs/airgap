@@ -1,8 +1,10 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./App.css";
+
+// ... (rest of imports)
 
 // Import UI Components
 import Sidebar from "./components/Sidebar";
@@ -52,21 +54,35 @@ export interface MessageType {
 
 // Convertit un DbMessage en MessageType
 function dbMessageToMessageType(msg: DbMessage, myUsername: string): MessageType {
-  const isMedia = msg.content.startsWith("[image]") || msg.media_type === "image";
-  
+  const isMedia = msg.content.toLowerCase().includes("[image") ||
+    (msg.media_type && msg.media_type.toLowerCase().includes("image"));
+
   let mediaData: string | undefined;
   let thumb: string | undefined;
-  
+
   if (isMedia && msg.media_data) {
-    mediaData = msg.media_data;
+    // Détection stricte d'un chemin de fichier (doit commencer par / ou \ ou une lettre de lecteur sous Windows)
+    const data = msg.media_data;
+    const isFilePath = data.startsWith("/") || data.startsWith("\\") || /^[a-zA-Z]:\\/.test(data);
+
+    if (isFilePath) {
+      mediaData = convertFileSrc(data);
+      console.log("[DEBUG] Media Path Loading:", {
+        original: data,
+        converted: mediaData
+      });
+    } else {
+      mediaData = data;
+    }
+
     thumb = msg.thumbnail;
   }
-  
+
   return {
     id: crypto.randomUUID(),
     sender: msg.sender_name === myUsername ? "Moi" : msg.sender_name,
     text: msg.content,
-    time: "",
+    time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), // Ajout d'une heure par défaut si absente
     mediaType: isMedia ? "image" : undefined,
     mediaData,
     thumbnail: thumb,
@@ -227,6 +243,11 @@ function App() {
     // IP locale
     invoke<string>("get_my_ip")
       .then((ip) => setMyIp(ip))
+      .catch(console.error);
+
+    // Debug: log media directory
+    invoke<string>("get_media_dir")
+      .then((path) => console.log("[DEBUG] Absolute Media Directory:", path))
       .catch(console.error);
 
     // Permission notification Web
@@ -638,6 +659,7 @@ function App() {
       await invoke("send_media", {
         peerIp: selectedPeer,
         filePath: media.path,
+        caption: caption || null,
       });
 
       setConversations((prev) => ({
@@ -675,7 +697,7 @@ function App() {
     ? selectedPeer in typingPeers  // true si un timeout actif existe pour ce pair
     : false;
   return (
-    <div className="flex h-screen bg-[#111b21] text-[#e9edef] font-sans overflow-hidden">
+    <div className="flex h-screen aurora-bg text-zinc-100 font-sans overflow-hidden">
       <Sidebar
         peers={peers}
         conflictPeers={conflictPeers}
@@ -692,8 +714,8 @@ function App() {
         <div className="flex-1 flex flex-col relative">
           {/* Indicateur de chargement de l'historique */}
           {isLoadingHistory && (
-            <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 bg-[#202c33] text-[#8696a0] text-xs px-3 py-1 rounded-full shadow">
-              Chargement de l'historique…
+            <div className="absolute top-20 left-1/2 -translate-x-1/2 z-10 bg-aurora-accent/20 backdrop-blur-md border border-aurora-accent/30 text-white text-[10px] font-bold uppercase tracking-widest px-4 py-1.5 rounded-full shadow-lg">
+              Synchronisation...
             </div>
           )}
           <ChatWindow
@@ -711,44 +733,62 @@ function App() {
           />
         </div>
       ) : (
-        // Empty state WhatsApp Web style
-        <div className="flex-1 flex flex-col items-center justify-center bg-[#222e35] border-l border-[#202c33] relative">
-          <div className="max-w-[80%] text-center border-b border-[#202c33]/20 pb-10">
-            <svg
-              viewBox="0 0 24 24"
-              height="120"
-              width="120"
-              preserveAspectRatio="xMidYMid meet"
-              className="mx-auto mb-8 text-[#46535d]"
-              fill="currentColor"
-            >
-              <path
-                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"
-                opacity=".8"
-              />
-              <path d="M12 4c-4.41 0-8 3.59-8 8s3.59 8 8 8 8-3.59 8-8-3.59-8-8-8zm0 14c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6 6-2.69 6-6 6z" />
-            </svg>
-            <h1 className="text-3xl font-light text-[#e9edef] mb-4">
-              AirGap pour Desktop
+        // Modern Empty State
+        <div className="flex-1 flex flex-col items-center justify-center aurora-bg relative overflow-hidden">
+          {/* Decorative background glows */}
+          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-aurora-accent/5 blur-[120px] rounded-full animate-pulse"></div>
+
+          <div className="max-w-md text-center relative z-10 animate-in fade-in zoom-in-95 duration-1000">
+            <div className="mb-10 relative inline-block group">
+              <div className="absolute inset-0 bg-aurora-accent/20 blur-3xl rounded-full scale-125 opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
+              <svg
+                viewBox="0 0 24 24"
+                height="160"
+                width="160"
+                className="mx-auto text-zinc-800 transition-transform duration-700 group-hover:scale-110"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="0.5"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <path d="M8 12h.01M12 12h.01M16 12h.01" strokeWidth="2" strokeLinecap="round" />
+                <path d="M12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10 10 10 0 0 1-10-10 10 10 0 0 1 10-10z" strokeOpacity="0.1" />
+              </svg>
+            </div>
+
+            <h1 className="text-4xl font-black text-white mb-4 tracking-tighter">
+              Prêt à échanger ?
             </h1>
-            <p className="text-[#8696a0] text-sm leading-relaxed max-w-md mx-auto">
-              Envoyez et recevez des messages sécurisés sans connexion Internet
-              via votre réseau local.
-              <br />
-              Sélectionnez un contact pour démarrer.
+            <p className="text-zinc-500 text-sm leading-relaxed font-medium uppercase tracking-[0.2em] mb-8">
+              Sélectionnez un pair actif pour <br />
+              ouvrir un canal sécurisé.
             </p>
+
+            <div className="flex items-center justify-center gap-6">
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/5 flex items-center justify-center text-zinc-400">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z" /></svg>
+                </div>
+                <span className="text-[9px] font-bold text-zinc-600 uppercase tracking-widest">Local</span>
+              </div>
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/5 flex items-center justify-center text-zinc-400">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z" /></svg>
+                </div>
+                <span className="text-[9px] font-bold text-zinc-600 uppercase tracking-widest">Chiffré</span>
+              </div>
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/5 flex items-center justify-center text-zinc-400">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M13 2L3 14h9l-1 8L21 10h-9l1-8z" /></svg>
+                </div>
+                <span className="text-[9px] font-bold text-zinc-600 uppercase tracking-widest">Rapide</span>
+              </div>
+            </div>
           </div>
-          <div className="absolute bottom-10 text-[#8696a0] text-xs flex items-center gap-1">
-            <svg
-              viewBox="0 0 10 12"
-              height="12"
-              width="10"
-              preserveAspectRatio="xMidYMid meet"
-              fill="currentColor"
-            >
-              <path d="M5 0C2.25 0 0 2.25 0 5v4.5C0 10.85 1.15 12 2.5 12h5c1.35 0 2.5-1.15 2.5-2.5V5c0-2.75-2.25-5-5-5zm0 1.5c1.95 0 3.5 1.55 3.5 3.5v.5h-7v-.5c0-1.95 1.55-3.5 3.5-3.5zM2.5 10.5C1.95 10.5 1.5 10.05 1.5 9.5V6.5h7v3c0 .55-.45 1-1 1h-5z" />
-            </svg>
-            Chiffré de bout en bout
+
+          <div className="absolute bottom-10 flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/5 backdrop-blur-md">
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Node AirGap Opérationnel</span>
           </div>
         </div>
       )}

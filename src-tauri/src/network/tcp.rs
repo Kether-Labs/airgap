@@ -44,7 +44,7 @@ fn handle_tcp_connection(
 
     if reader.read_line(&mut line).is_ok() {
         let line = line.trim();
-        let parts: Vec<&str> = line.splitn(4, ':').collect();
+        let parts: Vec<&str> = line.splitn(10, ':').collect();
 
         match parts[0] {
             "MSG" if parts.len() == 4 => {

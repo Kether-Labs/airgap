@@ -99,17 +99,17 @@ const MessageInput: React.FC<MessageInputProps> = ({ onSendMessage, onSendMedia,
     };
 
     return (
-        <div className="relative z-30 w-full">
+        <div className="relative z-30 w-full px-6 pb-6">
             {/* Media Preview Modal */}
             {mediaPreview && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0b141a]/80 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="bg-[#111b21] w-[450px] max-w-[90vw] rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-[#202c33]">
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
+                    <div className="bg-zinc-900 w-[500px] max-w-[95vw] rounded-[32px] shadow-2xl overflow-hidden border border-white/5 animate-in zoom-in-95 duration-300">
                         {/* Header */}
-                        <div className="flex items-center justify-between px-6 py-4">
-                            <h2 className="text-[#e9edef] text-[18px] font-medium">Aperçu de l'image</h2>
+                        <div className="flex items-center justify-between px-8 py-6">
+                            <h2 className="text-white text-xl font-bold">Partager l'image</h2>
                             <button
                                 onClick={handleCancelMedia}
-                                className="text-[#8696a0] hover:text-[#d1d7db] hover:bg-[#202c33] p-1.5 rounded-full transition-colors"
+                                className="text-zinc-500 hover:text-white hover:bg-white/5 p-2 rounded-xl transition-all"
                             >
                                 <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
                                     <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
@@ -118,71 +118,54 @@ const MessageInput: React.FC<MessageInputProps> = ({ onSendMessage, onSendMedia,
                         </div>
 
                         {/* Image Preview Area */}
-                        <div className="relative w-full max-h-[350px] bg-[#0b141a] flex items-center justify-center p-0 border-y border-[#202c33]">
+                        <div className="relative w-full max-h-[400px] bg-black/40 flex items-center justify-center p-4 border-y border-white/5">
                             {mediaPreview.base64 ? (
                                 <img
                                     src={`data:image/jpeg;base64,${mediaPreview.base64}`}
                                     alt="Aperçu"
-                                    className="max-h-[350px] max-w-full object-contain"
+                                    className="max-h-[380px] max-w-full rounded-2xl shadow-xl object-contain"
                                 />
                             ) : (
-                                <div className="h-[200px] flex items-center justify-center text-[#8696a0]">
+                                <div className="h-[200px] flex items-center justify-center text-zinc-500 font-bold uppercase tracking-widest text-xs">
                                     Chargement...
                                 </div>
                             )}
                         </div>
 
                         {/* Options / Footer Section */}
-                        <div className="px-6 py-5 flex flex-col gap-4">
+                        <div className="px-8 py-6 flex flex-col gap-6">
                             {/* Caption Input */}
-                            <div className="flex items-center relative border-b-2 border-[#202c33] pb-2 focus-within:border-[#00a884] transition-colors">
+                            <div className="flex items-center gap-3 bg-white/5 rounded-2xl px-5 py-3 border border-transparent focus-within:border-aurora-accent/40 transition-all">
                                 <input
                                     type="text"
                                     placeholder="Ajouter une légende..."
-                                    className="w-full bg-transparent text-[#e9edef] placeholder-[#8696a0] outline-none text-[15px]"
+                                    className="w-full bg-transparent text-white placeholder-zinc-500 outline-none text-[15px] font-medium"
                                     value={inputValue}
                                     onChange={handleChange}
                                     onKeyDown={(e) => e.key === "Enter" && handleSendMedia()}
                                 />
                                 <button
                                     onClick={() => setShowPicker(!showPicker)}
-                                    className={`${showPicker ? 'text-[#00a884]' : 'text-[#8696a0]'} hover:text-[#00a884] transition-colors`}
+                                    className={`${showPicker ? 'text-aurora-accent' : 'text-zinc-500'} hover:text-aurora-accent transition-colors`}
                                 >
-                                    <svg viewBox="0 0 24 24" height="24" width="24" fill="currentColor">
-                                        <path d="M9.153 11.603c.795 0 1.439-.879 1.439-1.962s-.644-1.962-1.439-1.962-1.439.879-1.439 1.962.644 1.962 1.439 1.962zm-3.204 1.362c-.026-.307-.131 5.218 6.063 5.551 6.066-.25 6.066-5.551 6.066-5.551-6.078 1.416-12.129 0-12.129 0zm11.363 1.108s-.669 1.959-5.051 1.959c-3.505 0-5.388-1.164-5.607-1.959 0 0 5.912 1.055 10.658 0zM11.804 1.011C5.609 1.011.978 6.033.978 12.228s4.826 10.761 11.021 10.761S23.02 18.423 23.02 12.228c.001-6.195-5.021-11.217-11.216-11.217zM12 21.354c-5.273 0-9.381-3.886-9.381-9.159s3.942-9.548 9.215-9.548 9.548 4.275 9.548 9.548c-.001 5.272-4.109 9.159-9.382 9.159zm3.108-9.751c.795 0 1.439-.879 1.439-1.962s-.644-1.962-1.439-1.962-1.439.879-1.439 1.962.644 1.962 1.439 1.962z" />
+                                    <svg viewBox="0 0 24 24" height="22" width="22" fill="currentColor">
+                                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5s.67 1.5 1.5 1.5zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z" />
                                     </svg>
                                 </button>
-
-                                {/* Emoji Picker for Modal */}
-                                {showPicker && (
-                                    <div className="absolute bottom-full right-0 mb-4 shadow-2xl rounded-2xl overflow-hidden border border-[#202c33] z-50 animate-in slide-in-from-bottom-2 duration-200">
-                                        <EmojiPicker
-                                            theme={Theme.DARK}
-                                            onEmojiClick={handleEmojiClick}
-                                            searchDisabled={true}
-                                            skinTonesDisabled={true}
-                                            width={350}
-                                            height={350}
-                                        />
-                                    </div>
-                                )}
                             </div>
 
                             {/* Actions Footer */}
-                            <div className="flex items-center justify-between mt-2 pt-1 gap-3">
+                            <div className="flex items-center gap-3">
                                 <button
                                     onClick={handleCancelMedia}
-                                    className="text-[#8696a0] font-medium text-[15px] hover:text-[#e9edef] hover:bg-[#202c33] px-5 py-2.5 rounded-xl transition-all"
+                                    className="flex-1 text-zinc-400 font-bold text-sm uppercase tracking-widest hover:text-white hover:bg-white/5 py-4 rounded-2xl transition-all"
                                 >
                                     Annuler
                                 </button>
                                 <button
                                     onClick={handleSendMedia}
-                                    className="bg-[#00a884] cursor-pointer hover:bg-[#02b992] text-[#111b21] font-semibold text-[15px] px-8 py-2.5 rounded-xl transition-all flex items-center gap-2 active:scale-95"
+                                    className="flex-[2] bg-aurora-accent hover:bg-indigo-500 text-white font-bold text-sm uppercase tracking-widest py-4 rounded-2xl shadow-lg shadow-aurora-accent/20 transition-all active:scale-95 flex items-center justify-center gap-2"
                                 >
-                                    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-                                        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-                                    </svg>
                                     Envoyer
                                 </button>
                             </div>
@@ -191,28 +174,23 @@ const MessageInput: React.FC<MessageInputProps> = ({ onSendMessage, onSendMedia,
                 </div>
             )}
 
-            {/* Main Input */}
-            <footer className="bg-[#0b141a] px-4 py-3 flex items-end gap-3 w-full min-h-[70px]">
-
-                <div className="flex items-center gap-1 mb-1.5 flex-shrink-0">
+            {/* Main Input Bar */}
+            <footer className="glass rounded-[24px] px-2 py-2 flex items-center gap-2 shadow-2xl">
+                <div className="flex items-center">
                     {/* Attachment Button */}
                     <button
                         onClick={handleAttachClick}
                         disabled={isUploading || !selectedPeer}
-                        className={`text-[#8696a0] p-2 rounded-full transition-all ${selectedPeer && !isUploading
-                            ? "hover:text-[#d1d7db] hover:bg-[#2a3942]"
-                            : "opacity-50 cursor-not-allowed"
+                        className={`p-3 rounded-xl transition-all ${selectedPeer && !isUploading
+                            ? "text-zinc-400 hover:text-white hover:bg-white/5"
+                            : "opacity-30 cursor-not-allowed"
                             }`}
-                        title="Joindre une image"
                     >
                         {isUploading ? (
-                            <svg className="animate-spin" viewBox="0 0 24 24" height="24" width="24">
-                                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" fill="none" strokeDasharray="30 70" />
-                            </svg>
+                            <div className="w-5 h-5 border-2 border-aurora-accent border-t-transparent rounded-full animate-spin" />
                         ) : (
-                            <svg viewBox="0 0 24 24" height="24" width="24" fill="currentColor">
-                                <path d="M20.003 10.895v6.368A1.734 1.734 0 0118.268 19H5.732A1.734 1.734 0 014 17.263v-6.368A1.734 1.734 0 015.732 9h1.366a1.734 1.734 0 011.366 1.366v2.439l3.317-3.317a1.734 1.734 0 012.366 0l2.622 2.622a1.732 1.734 0 012.366 0L19 9.268A1.734 1.734 0 0120.003 10.895zM12 16.732a4.634 4.634 0 100-9.268 4.634 4.634 0 000 9.268z" />
-                                <path d="M12 16.732v-4.634m0 4.634v-2.317" />
+                            <svg viewBox="0 0 24 24" height="22" width="22" fill="currentColor">
+                                <path d="M19 7v2.99s-1.99.01-2 0V7h-3s.01-1.99 0-2h3V2h2v3h3v2h-3zm-3 4V8h-3V5H5c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-8h-3zM5 19l3-4 2 3 3-4 4 5H5z"/>
                             </svg>
                         )}
                     </button>
@@ -220,40 +198,54 @@ const MessageInput: React.FC<MessageInputProps> = ({ onSendMessage, onSendMedia,
                     {/* Emoji Button */}
                     <button
                         onClick={() => setShowPicker(!showPicker)}
-                        className="text-[#8696a0] hover:text-[#d1d7db] p-2 rounded-full hover:bg-[#2a3942] transition-all"
+                        className={`p-3 rounded-xl transition-all ${showPicker ? 'text-aurora-accent bg-aurora-accent/10' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}
                     >
-                        <svg viewBox="0 0 24 24" height="24" width="24" fill="currentColor">
-                            <path d="M9.153 11.603c.795 0 1.439-.879 1.439-1.962s-.644-1.962-1.439-1.962-1.439.879-1.439 1.962.644 1.962 1.439 1.962zm-3.204 1.362c-.026-.307-.131 5.218 6.063 5.551 6.066-.25 6.066-5.551 6.066-5.551-6.078 1.416-12.129 0-12.129 0zm11.363 1.108s-.669 1.959-5.051 1.959c-3.505 0-5.388-1.164-5.607-1.959 0 0 5.912 1.055 10.658 0zM11.804 1.011C5.609 1.011.978 6.033.978 12.228s4.826 10.761 11.021 10.761S23.02 18.423 23.02 12.228c.001-6.195-5.021-11.217-11.216-11.217zM12 21.354c-5.273 0-9.381-3.886-9.381-9.159s3.942-9.548 9.215-9.548 9.548 4.275 9.548 9.548c-.001 5.272-4.109 9.159-9.382 9.159zm3.108-9.751c.795 0 1.439-.879 1.439-1.962s-.644-1.962-1.439-1.962-1.439.879-1.439 1.962.644 1.962 1.439 1.962z" />
+                        <svg viewBox="0 0 24 24" height="22" width="22" fill="currentColor">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5s.67 1.5 1.5 1.5zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z" />
                         </svg>
                     </button>
                 </div>
 
                 {/* Emoji Picker for Main Input */}
                 {showPicker && !mediaPreview && (
-                    <div className="absolute bottom-[75px] left-4 shadow-2xl rounded-2xl overflow-hidden border border-[#202c33]">
+                    <div className="absolute bottom-[100px] left-6 shadow-2xl rounded-3xl overflow-hidden border border-white/5 animate-in slide-in-from-bottom-4 duration-300">
                         <EmojiPicker
                             theme={Theme.DARK}
                             onEmojiClick={handleEmojiClick}
                             searchDisabled={true}
                             skinTonesDisabled={true}
-                            width={350}
+                            width={320}
                             height={400}
                         />
                     </div>
                 )}
 
                 {/* Text Input */}
-                <div className="flex-1 bg-[#2a3942] rounded-2xl relative px-5 py-2.5 mb-1 flex items-center min-h-[46px] shadow-sm transition-all focus-within:bg-[#32404b]">
+                <div className="flex-1 flex items-center h-12">
                     <input
                         type="text"
-                        placeholder="Taper un message"
-                        className="w-full bg-transparent text-[#d1d7db] placeholder-[#8696a0] outline-none text-[15px]"
+                        placeholder="Écrire un message..."
+                        className="w-full bg-transparent text-white placeholder-zinc-500 outline-none text-base font-medium px-2"
                         value={inputValue}
                         onChange={handleChange}
                         onKeyDown={(e) => e.key === "Enter" && handleSendText()}
                     />
                 </div>
 
+                {/* Send Button */}
+                <button
+                    onClick={handleSendText}
+                    disabled={!inputValue.trim()}
+                    className={`h-11 w-11 flex items-center justify-center rounded-2xl transition-all duration-300 active:scale-90
+                        ${inputValue.trim() 
+                            ? "bg-aurora-accent text-white shadow-lg shadow-aurora-accent/20" 
+                            : "bg-white/5 text-zinc-600 cursor-not-allowed"}
+                    `}
+                >
+                    <svg viewBox="0 0 24 24" height="20" width="20" fill="currentColor" className={inputValue.trim() ? "translate-x-0.5" : ""}>
+                        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                    </svg>
+                </button>
             </footer>
         </div>
     );

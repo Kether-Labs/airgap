@@ -19,8 +19,8 @@ pub struct DbMessage {
 }
 
 fn get_db_path() -> PathBuf {
-    let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-    path.push("airgap");
+    let mut path = dirs::config_dir().expect("Impossible de trouver le dossier config");
+    path.push("com.level.airgap"); // Utilise l'identifiant exact du projet
     fs::create_dir_all(&path).ok();
     path.push("airgap.db");
     path
@@ -56,6 +56,14 @@ pub fn init_db() -> SqlResult<Connection> {
     Ok(conn)
 }
 
+pub fn get_media_dir() -> PathBuf {
+    let mut path = get_db_path();
+    path.pop(); // airgap.db
+    path.push("media");
+    fs::create_dir_all(&path).ok();
+    path
+}
+
 pub fn save_message(
     conn: &Connection, 
     peer_ip: &str, 
@@ -66,11 +74,36 @@ pub fn save_message(
     media_type: Option<&str>,
     thumbnail: Option<&[u8]>,
 ) -> SqlResult<()> {
-    let media_b64 = media_data.map(|d| general_purpose::STANDARD.encode(d));
+    let mut media_stored_path: Option<String> = None;
+    
+    if let Some(data) = media_data {
+        use rand::{Rng, distributions::Alphanumeric};
+        let random_id: String = rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(16)
+            .map(char::from)
+            .collect();
+            
+        let extension = match media_type {
+            Some(t) if t.contains("png") => "png",
+            Some(t) if t.contains("gif") => "gif",
+            Some(t) if t.contains("webp") => "webp",
+            _ => "jpg",
+        };
+        
+        let filename = format!("{}.{}", random_id, extension);
+        let mut file_path = get_media_dir();
+        file_path.push(&filename);
+        
+        if fs::write(&file_path, data).is_ok() {
+            media_stored_path = Some(file_path.to_string_lossy().to_string());
+        }
+    }
+
     let thumb_b64 = thumbnail.map(|t| general_purpose::STANDARD.encode(t));
     
-    println!("[DB] save: peer={}, content={}, media={:?}, thumb={:?}", 
-        peer_ip, content, media_b64.is_some(), thumb_b64.is_some());
+    println!("[DB] save: peer={}, content={}, media_path={:?}, thumb={:?}", 
+        peer_ip, content, media_stored_path, thumb_b64.is_some());
     
     let cipher = Aes256Gcm::new_from_slice(db_key).unwrap();
     let nonce_bytes = random::<[u8; 12]>();
@@ -84,9 +117,6 @@ pub fn save_message(
         general_purpose::STANDARD.encode(&nonce_bytes)
     );
 
-    let media_b64 = media_data.map(|d| general_purpose::STANDARD.encode(d));
-    let thumb_b64 = thumbnail.map(|t| general_purpose::STANDARD.encode(t));
-
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -95,7 +125,7 @@ pub fn save_message(
     conn.execute(
         "INSERT INTO messages (peer_ip, sender_name, content, media_data, media_type, thumbnail, timestamp) 
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        params![peer_ip, sender_name, stored, media_b64, media_type, thumb_b64, timestamp],
+        params![peer_ip, sender_name, stored, media_stored_path, media_type, thumb_b64, timestamp],
     )?;
     Ok(())
 }

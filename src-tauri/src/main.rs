@@ -60,9 +60,14 @@ use state::AppState;
     commands::set_active_peer(peer_ip, state)
 }
 
+#[tauri::command] fn get_media_dir() -> String {
+    db::get_media_dir().to_string_lossy().to_string()
+}
+
 #[tauri::command] fn send_media(
     peer_ip: String,
     file_path: String,
+    caption: Option<String>,
     state: tauri::State<Arc<AppState>>,
 ) -> Result<String, String> {
     let (full_data, thumb_data, media_type) = commands::load_and_compress_image(&file_path, 1280, 80)?;
@@ -77,7 +82,7 @@ use state::AppState;
         media_type,
         msg_id.clone(),
         Some(thumb_data),
-        None,
+        caption,
         state
     )?;
     
@@ -107,6 +112,7 @@ fn main() {
             get_my_ip,
             notify_offline,
             set_active_peer,
+            get_media_dir,
         ])
         .setup(move |app| {
             let app_handle = app.handle();

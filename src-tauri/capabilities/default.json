@@ -16,6 +16,12 @@
     "dialog:default",
     "dialog:allow-open",
     "fs:default",
-    "fs:allow-read"
-  ]
-}
+    {
+      "identifier": "fs:allow-read",
+      "comment": "Autorise la lecture des images dans le dossier config spécifique",
+      "args": {
+        "path": "$CONFIG/com.level.airgap/**"
+      }
+    }
+    ]
+    }
