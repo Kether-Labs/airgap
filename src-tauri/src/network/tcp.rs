@@ -155,7 +155,7 @@ fn handle_tcp_connection(
                                 _ => format!("[{}]", media_type),
                             };
 
-                            {
+                            let media_stored_path = {
                                 let db = state.db.lock().unwrap();
                                 db::save_message(
                                     &db, 
@@ -166,8 +166,8 @@ fn handle_tcp_connection(
                                     Some(&image_data),
                                     Some(&media_type),
                                     thumbnail.as_deref()
-                                ).ok();
-                            }
+                                ).unwrap_or(None)
+                            };
 
                             let msg = ChatMessage {
                                 sender_ip: sender_addr.clone(),
@@ -178,6 +178,7 @@ fn handle_tcp_connection(
                             let _ = app_handle.emit("media-received", serde_json::json!({
                                 "message": msg,
                                 "data": general_purpose::STANDARD.encode(&image_data),
+                                "file_path": media_stored_path, // Nouveau champ pour le chemin local
                                 "media_type": media_type,
                                 "thumbnail": thumbnail.map(|t| general_purpose::STANDARD.encode(t))
                             }));

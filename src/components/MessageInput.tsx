@@ -7,6 +7,8 @@ import { invoke } from "@tauri-apps/api/core";
 interface MediaPreview {
     path: string;
     base64: string;
+    type: string;
+    name: string;
 }
 
 interface MessageInputProps {
@@ -55,23 +57,28 @@ const MessageInput: React.FC<MessageInputProps> = ({ onSendMessage, onSendMedia,
             const selected = await open({
                 multiple: false,
                 filters: [{
-                    name: 'Images',
-                    extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp']
+                    name: 'Fichiers',
+                    extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'doc', 'docx']
                 }]
             });
 
             if (selected) {
                 setIsUploading(true);
                 const filePath = selected as string;
+                const fileName = filePath.split(/[/\\]/).pop() || "fichier";
+                const extension = fileName.split('.').pop()?.toLowerCase() || "";
+
+                const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(extension);
+                const type = isImage ? "image" : "document";
 
                 try {
                     const fileData = await readFile(filePath);
                     const base64 = btoa(
                         new Uint8Array(fileData).reduce((data, byte) => data + String.fromCharCode(byte), '')
                     );
-                    setMediaPreview({ path: filePath, base64 });
+                    setMediaPreview({ path: filePath, base64, type, name: fileName });
                 } catch {
-                    setMediaPreview({ path: filePath, base64: "" });
+                    setMediaPreview({ path: filePath, base64: "", type, name: fileName });
                 }
 
                 setIsUploading(false);
@@ -86,9 +93,9 @@ const MessageInput: React.FC<MessageInputProps> = ({ onSendMessage, onSendMedia,
         if (!mediaPreview) return;
         onSendMedia({
             path: mediaPreview.path,
-            type: "image",
+            type: mediaPreview.type,
             base64: mediaPreview.base64,
-            caption: inputValue.trim() || undefined
+            caption: inputValue.trim() || (mediaPreview.type === "document" ? mediaPreview.name : undefined)
         });
         setMediaPreview(null);
         setInputValue("");
@@ -119,15 +126,26 @@ const MessageInput: React.FC<MessageInputProps> = ({ onSendMessage, onSendMedia,
 
                         {/* Image Preview Area */}
                         <div className="relative w-full max-h-[400px] bg-black/40 flex items-center justify-center p-4 border-y border-white/5">
-                            {mediaPreview.base64 ? (
-                                <img
-                                    src={`data:image/jpeg;base64,${mediaPreview.base64}`}
-                                    alt="Aperçu"
-                                    className="max-h-[380px] max-w-full rounded-2xl shadow-xl object-contain"
-                                />
+                            {mediaPreview.type === "image" ? (
+                                mediaPreview.base64 ? (
+                                    <img
+                                        src={`data:image/jpeg;base64,${mediaPreview.base64}`}
+                                        alt="Aperçu"
+                                        className="max-h-[380px] max-w-full rounded-2xl shadow-xl object-contain"
+                                    />
+                                ) : (
+                                    <div className="h-[200px] flex items-center justify-center text-zinc-500 font-bold uppercase tracking-widest text-xs">
+                                        Chargement...
+                                    </div>
+                                )
                             ) : (
-                                <div className="h-[200px] flex items-center justify-center text-zinc-500 font-bold uppercase tracking-widest text-xs">
-                                    Chargement...
+                                <div className="h-[200px] flex flex-col items-center justify-center gap-4">
+                                    <div className="w-20 h-20 bg-white/5 rounded-2xl flex items-center justify-center border border-white/10">
+                                        <svg viewBox="0 0 24 24" width="40" height="40" fill="currentColor" className="text-aurora-accent">
+                                            <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z" />
+                                        </svg>
+                                    </div>
+                                    <span className="text-white font-bold text-sm truncate max-w-[300px]">{mediaPreview.name}</span>
                                 </div>
                             )}
                         </div>
@@ -190,7 +208,7 @@ const MessageInput: React.FC<MessageInputProps> = ({ onSendMessage, onSendMedia,
                             <div className="w-5 h-5 border-2 border-aurora-accent border-t-transparent rounded-full animate-spin" />
                         ) : (
                             <svg viewBox="0 0 24 24" height="22" width="22" fill="currentColor">
-                                <path d="M19 7v2.99s-1.99.01-2 0V7h-3s.01-1.99 0-2h3V2h2v3h3v2h-3zm-3 4V8h-3V5H5c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-8h-3zM5 19l3-4 2 3 3-4 4 5H5z"/>
+                                <path d="M19 7v2.99s-1.99.01-2 0V7h-3s.01-1.99 0-2h3V2h2v3h3v2h-3zm-3 4V8h-3V5H5c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-8h-3zM5 19l3-4 2 3 3-4 4 5H5z" />
                             </svg>
                         )}
                     </button>
@@ -237,8 +255,8 @@ const MessageInput: React.FC<MessageInputProps> = ({ onSendMessage, onSendMedia,
                     onClick={handleSendText}
                     disabled={!inputValue.trim()}
                     className={`h-11 w-11 flex items-center justify-center rounded-2xl transition-all duration-300 active:scale-90
-                        ${inputValue.trim() 
-                            ? "bg-aurora-accent text-white shadow-lg shadow-aurora-accent/20" 
+                        ${inputValue.trim()
+                            ? "bg-aurora-accent text-white shadow-lg shadow-aurora-accent/20"
                             : "bg-white/5 text-zinc-600 cursor-not-allowed"}
                     `}
                 >

@@ -73,7 +73,7 @@ pub fn save_message(
     media_data: Option<&[u8]>,
     media_type: Option<&str>,
     thumbnail: Option<&[u8]>,
-) -> SqlResult<()> {
+) -> SqlResult<Option<String>> {
     let mut media_stored_path: Option<String> = None;
     
     if let Some(data) = media_data {
@@ -88,7 +88,10 @@ pub fn save_message(
             Some(t) if t.contains("png") => "png",
             Some(t) if t.contains("gif") => "gif",
             Some(t) if t.contains("webp") => "webp",
-            _ => "jpg",
+            Some(t) if t.contains("pdf") => "pdf",
+            Some(t) if t.contains("wordprocessingml") || t.contains("msword") || t.contains("document") => "docx",
+            Some(t) if t.contains("image") => "jpg",
+            _ => "bin", // Default to binary for unknown documents
         };
         
         let filename = format!("{}.{}", random_id, extension);
@@ -127,7 +130,7 @@ pub fn save_message(
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![peer_ip, sender_name, stored, media_stored_path, media_type, thumb_b64, timestamp],
     )?;
-    Ok(())
+    Ok(media_stored_path)
 }
 
 pub fn load_history(

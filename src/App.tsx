@@ -46,18 +46,21 @@ export interface MessageType {
   sender: string;
   text: string;
   time: string;
-  mediaType?: "image" | "video" | "audio";
+  mediaType?: "image" | "video" | "audio" | "document";
   mediaData?: string;
+  filePath?: string; // Ajout du chemin brut pour ouverture système
   thumbnail?: string;
   status?: "sending" | "sent" | "delivered" | "failed";
 }
 
 // Convertit un DbMessage en MessageType
 function dbMessageToMessageType(msg: DbMessage, myUsername: string): MessageType {
-  const isMedia = msg.content.toLowerCase().includes("[image") ||
-    (msg.media_type && msg.media_type.toLowerCase().includes("image"));
+  const isImage = msg.media_type && msg.media_type.toLowerCase().includes("image");
+  const isDocument = msg.media_type && (msg.media_type.includes("pdf") || msg.media_type.includes("document") || msg.media_type.includes("octet-stream"));
+  const isMedia = isImage || isDocument || msg.content.toLowerCase().includes("[image") || msg.content.toLowerCase().includes("[document");
 
   let mediaData: string | undefined;
+  let rawFilePath: string | undefined;
   let thumb: string | undefined;
 
   if (isMedia && msg.media_data) {
@@ -66,6 +69,7 @@ function dbMessageToMessageType(msg: DbMessage, myUsername: string): MessageType
     const isFilePath = data.startsWith("/") || data.startsWith("\\") || /^[a-zA-Z]:\\/.test(data);
 
     if (isFilePath) {
+      rawFilePath = data;
       mediaData = convertFileSrc(data);
       console.log("[DEBUG] Media Path Loading:", {
         original: data,
@@ -82,9 +86,10 @@ function dbMessageToMessageType(msg: DbMessage, myUsername: string): MessageType
     id: crypto.randomUUID(),
     sender: msg.sender_name === myUsername ? "Moi" : msg.sender_name,
     text: msg.content,
-    time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), // Ajout d'une heure par défaut si absente
-    mediaType: isMedia ? "image" : undefined,
+    time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    mediaType: isImage ? "image" : (isDocument ? "document" : undefined),
     mediaData,
+    filePath: rawFilePath,
     thumbnail: thumb,
   };
 }
@@ -370,6 +375,9 @@ function App() {
         const data = event.payload;
         const msg = data.message;
         const senderIp = msg.sender_ip;
+        const mediaTypeRaw = data.media_type || "";
+        const isImage = mediaTypeRaw.includes("image");
+        const isDocument = mediaTypeRaw.includes("pdf") || mediaTypeRaw.includes("document") || mediaTypeRaw.includes("octet-stream");
 
         setConversations((prev) => {
           const existing = prev[senderIp] || [];
@@ -380,13 +388,14 @@ function App() {
               {
                 id: msg.message_id,
                 sender: msg.sender_name,
-                text: "[Image]",
+                text: msg.content || (isImage ? "[Image]" : "[Document]"),
                 time: new Date().toLocaleTimeString([], {
                   hour: "2-digit",
                   minute: "2-digit",
                 }),
-                mediaType: "image",
+                mediaType: isImage ? "image" : (isDocument ? "document" : undefined),
                 mediaData: data.data,
+                filePath: data.file_path, // Capture du chemin local
                 thumbnail: data.thumbnail,
               },
             ],
@@ -634,19 +643,21 @@ function App() {
     if (!selectedPeer) return;
 
     const caption = media.caption || "";
+    const isImage = media.type === "image";
 
     const msgId = generateUUID();
     const newMessage: MessageType = {
       id: msgId,
       sender: "Moi",
-      text: caption || "[Image]",
+      text: caption || (isImage ? "[Image]" : "[Document]"),
       time: new Date().toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit",
       }),
-      mediaType: "image",
+      mediaType: isImage ? "image" : "document",
       mediaData: media.base64,
-      thumbnail: media.base64,
+      filePath: media.path,
+      thumbnail: isImage ? media.base64 : undefined,
       status: "sending",
     };
 

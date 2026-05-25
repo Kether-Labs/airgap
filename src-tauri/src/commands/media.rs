@@ -76,9 +76,9 @@ pub fn send_media(
     
     println!("[DEBUG] Saving media to DB: content={}, media_data_len={}, thumb_len={}", 
         content, image_data.len(), thumbnail.as_ref().map(|t| t.len()).unwrap_or(0));
-        
+
     let thumb_ref: Option<&[u8]> = thumbnail.as_ref().map(|v| v.as_slice());
-    db::save_message(&db, &peer_ip, &username, &content, &state.db_key, Some(&image_data), Some(&media_type), thumb_ref).ok();
+    let _ = db::save_message(&db, &peer_ip, &username, &content, &state.db_key, Some(&image_data), Some(&media_type), thumb_ref);
 
     Ok(())
-}
+    }

@@ -70,9 +70,30 @@ use state::AppState;
     caption: Option<String>,
     state: tauri::State<Arc<AppState>>,
 ) -> Result<String, String> {
-    let (full_data, thumb_data, media_type) = commands::load_and_compress_image(&file_path, 1280, 80)?;
+    let path = std::path::Path::new(&file_path);
+    let ext = path.extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+        
+    let is_image = matches!(ext.as_str(), "jpg" | "jpeg" | "png" | "gif" | "webp");
     
-    println!("[MAIN] send_media: file={}, full_data_len={}, thumb_len={}", file_path, full_data.len(), thumb_data.len());
+    let (full_data, thumb_data, media_type) = if is_image {
+        let (fd, td, mt) = commands::load_and_compress_image(&file_path, 1280, 80)?;
+        (fd, Some(td), mt)
+    } else {
+        // Generic file
+        let data = std::fs::read(&file_path)
+            .map_err(|e| format!("Impossible de lire le fichier: {}", e))?;
+        let mt = match ext.as_str() {
+            "pdf" => "application/pdf",
+            "doc" | "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            _ => "application/octet-stream",
+        };
+        (data, None, mt.to_string())
+    };
+    
+    println!("[MAIN] send_media: file={}, type={}, len={}", file_path, media_type, full_data.len());
     
     let msg_id = format!("{:032x}", rand::random::<u128>());
     
@@ -81,12 +102,19 @@ use state::AppState;
         full_data,
         media_type,
         msg_id.clone(),
-        Some(thumb_data),
+        thumb_data,
         caption,
         state
     )?;
     
     Ok(msg_id)
+}
+
+#[tauri::command] fn open_file(path: String, app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    println!("[MAIN] opening file: {}", path);
+    app.opener().open_path(&path, None::<String>).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 fn main() {
@@ -96,6 +124,7 @@ fn main() {
     };
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())
@@ -113,6 +142,7 @@ fn main() {
             notify_offline,
             set_active_peer,
             get_media_dir,
+            open_file,
         ])
         .setup(move |app| {
             let app_handle = app.handle();
