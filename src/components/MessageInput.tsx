@@ -106,7 +106,7 @@ const MessageInput: React.FC<MessageInputProps> = ({ onSendMessage, onSendMedia,
     };
 
     return (
-        <div className="relative z-30 w-full px-6 pb-6">
+        <div className="relative m-auto z-30 w-[50%] px-6 pb-6">
             {/* Media Preview Modal */}
             {mediaPreview && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-md animate-in fade-in duration-300">

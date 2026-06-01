@@ -30,7 +30,7 @@ const PeerItem: React.FC<PeerItemProps> = ({ peer, isOnline, isSelected, hasConf
                 `}>
                     {peer.name.charAt(0).toUpperCase()}
                 </div>
-                
+
                 {/* Status Indicator */}
                 {hasConflict ? (
                     <div className="absolute -top-1 -right-1 w-5 h-5 bg-amber-500 rounded-full flex items-center justify-center text-[10px] font-black text-black shadow-lg border-2 border-zinc-900 animate-pulse">
@@ -92,9 +92,9 @@ const Sidebar: React.FC<SidebarProps> = ({ peers, selectedPeer, setSelectedPeer,
 
             {/* BRANDING AREA */}
             <div className="px-6 py-6 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-aurora-accent/10 rounded-xl flex items-center justify-center border border-aurora-accent/20">
-                        <img src={logo} alt="AirGap" className="w-7 h-7 object-contain" />
+                <div className="flex items-center justify-center">
+                    <div className="w-16 h-16 flex items-center justify-center">
+                        <img src={logo} alt="AirGap" className="w-16 h-16 object-contain" />
                     </div>
                     <span className="text-xl font-bold tracking-tight text-white">AirGap</span>
                 </div>

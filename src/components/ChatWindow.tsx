@@ -50,8 +50,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     };
 
     return (
-        <div 
-            className="flex-1 flex flex-col min-h-0 aurora-bg relative z-0"
+        <div
+            className="flex-1 flex flex-col min-h-0 chat-background relative z-0"
             onClick={() => setSelectedMessageId(null)}
         >
 
@@ -60,7 +60,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 {selectedMessageId ? (
                     <div className="flex items-center justify-between w-full animate-in slide-in-from-top-4 duration-300">
                         <div className="flex items-center gap-4">
-                            <button 
+                            <button
                                 onClick={() => setSelectedMessageId(null)}
                                 className="p-2 text-zinc-400 hover:text-white hover:bg-white/5 rounded-xl transition-all"
                             >
@@ -69,7 +69,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                             <span className="text-white font-bold text-lg uppercase tracking-widest">1 sélectionné</span>
                         </div>
                         <div className="flex items-center gap-2">
-                            <button 
+                            <button
                                 onClick={(e) => { e.stopPropagation(); handleDeleteSelected(); }}
                                 className="bg-red-500 hover:bg-red-600 text-white px-5 py-2 rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-red-500/20 transition-all active:scale-95 flex items-center gap-2"
                             >
@@ -119,7 +119,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                     {messages.length === 0 && !isTyping ? (
                         <div className="flex-1 flex items-center justify-center">
                             <div className="bg-white/5 backdrop-blur-md border border-white/5 text-zinc-400 px-6 py-3 rounded-2xl text-xs font-medium tracking-wide shadow-xl text-center flex items-center gap-3">
-                                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" className="text-aurora-accent"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm4.59-12.42L10 14.17l-2.59-2.58L6 13l4 4 8-8z"/></svg>
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" className="text-aurora-accent"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm4.59-12.42L10 14.17l-2.59-2.58L6 13l4 4 8-8z" /></svg>
                                 Les messages sont chiffrés de bout en bout localement.
                             </div>
                         </div>
